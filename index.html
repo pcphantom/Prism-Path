@@ -1,0 +1,5334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0a0714">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Prism Path</title>
+<style>
+  :root {
+    --bg-deep: #08061199;
+    --panel: rgba(24, 18, 44, 0.82);
+    --panel-edge: rgba(150, 120, 255, 0.28);
+    --ink: #efe9ff;
+    --ink-dim: #a99fc9;
+    --accent: #b07cff;
+    --danger: #ff5470;
+    --good: #45e08a;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    overscroll-behavior: none;
+    background: #06040d;
+    color: var(--ink);
+    font-family: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+  }
+
+  #app {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: calc(6px + var(--safe-top)) 8px calc(6px + var(--safe-bottom)) 8px;
+    gap: 6px;
+  }
+
+  /* ---------------------------------------------------------------- HUD */
+
+  #hud {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  #topRow {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .stat {
+    flex: 1 1 0;
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+    padding: 5px 8px;
+    min-width: 0;
+  }
+
+  .stat .label {
+    font-size: 10px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  .stat .value {
+    font-size: 20px;
+    font-weight: bold;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .stat .value.small { font-size: 15px; }
+
+  #movesStat.low .value { color: var(--danger); }
+
+  #goalBar {
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+    padding: 0 0 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+  }
+
+  #goalText {
+    font-size: 13px;
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #goalCount {
+    font-size: 13px;
+    font-weight: bold;
+    color: var(--accent);
+    flex: 0 0 auto;
+  }
+
+  #goalTrack {
+    flex: 0 0 90px;
+    height: 8px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+  }
+
+  #goalFill {
+    height: 100%;
+    width: 0%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #7c5cff, #45e08a);
+    transition: width 0.25s ease-out;
+  }
+
+  /* -------------------------------------------------------------- stage */
+
+  #stage {
+    flex: 1 1 auto;
+    position: relative;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #board {
+    display: block;
+    touch-action: none;
+  }
+
+  /* ----------------------------------------------------------- controls */
+
+  #controls {
+    flex: 0 0 auto;
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+  }
+
+  button {
+    font-family: inherit;
+    color: var(--ink);
+    background: var(--panel);
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+    padding: 9px 6px;
+    font-size: 12px;
+    letter-spacing: 0.6px;
+    cursor: pointer;
+    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+  }
+
+  button:active { transform: scale(0.94); }
+
+  .iconBtn {
+    flex: 0 0 52px;
+    font-size: 18px;
+    padding: 8px 0;
+  }
+
+  /* Full height of the goal bar, and wide enough to hit with a
+     thumb without looking. */
+  #menuBtn {
+    flex: 0 0 auto;
+    align-self: stretch;
+    width: 52px;
+    padding: 0;
+    font-size: 21px;
+    line-height: 1;
+    border-radius: 0 11px 11px 0;
+    border: 0;
+    border-left: 1px solid var(--panel-edge);
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  #menuBtn:active { background: rgba(255, 255, 255, 0.16); }
+
+  #controls {
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  #chargeRow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 2px;
+  }
+
+  #chargeLabel,
+  #chargeValue {
+    flex: 0 0 auto;
+    font-size: 10px;
+    letter-spacing: 1.2px;
+    color: var(--ink-dim);
+  }
+
+  #chargeValue {
+    font-weight: bold;
+    color: var(--ink);
+    min-width: 44px;
+    text-align: right;
+  }
+
+  #chargeTrack {
+    position: relative;
+    flex: 1 1 auto;
+    height: 14px;
+    border-radius: 99px;
+    background: rgba(255, 255, 255, 0.09);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    overflow: hidden;
+  }
+
+  #chargeFill {
+    height: 100%;
+    width: 0%;
+    border-radius: 99px;
+    background: linear-gradient(90deg, #7c5cff, #4fd6ff, #45e08a);
+    transition: width 0.25s ease-out;
+  }
+
+  /* One notch per item, so the bar shows how close the next one is. */
+  #chargeTicks {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .chargeTick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: rgba(10, 6, 20, 0.75);
+  }
+
+  .chargeTick.reached { background: rgba(255, 255, 255, 0.85); }
+
+  #itemRow {
+    display: flex;
+    gap: 5px;
+  }
+
+  .itemBtn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 8px 2px;
+    opacity: 0.4;
+  }
+
+  .itemBtn .glyph { font-size: 22px; line-height: 1; }
+
+  .itemBtn .name {
+    font-size: 10px;
+    line-height: 1;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .itemBtn .cost { display: none; }
+
+  .itemBtn.ready {
+    opacity: 1;
+    border-color: rgba(176, 124, 255, 0.6);
+    background: rgba(124, 92, 255, 0.16);
+  }
+
+  .itemBtn.armed {
+    opacity: 1;
+    color: #fff;
+    border-color: var(--good);
+    background: rgba(69, 224, 138, 0.22);
+    animation: pulse 1.1s ease-in-out infinite;
+  }
+
+  /* ------------------------------------------------------------ menu */
+
+  #menuPanel {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(6, 4, 13, 0.9);
+    backdrop-filter: blur(3px);
+    z-index: 20;
+  }
+
+  #menuPanel.hidden { display: none; }
+
+  #menuCard {
+    width: 100%;
+    max-width: 300px;
+    background: linear-gradient(160deg, rgba(40, 28, 74, 0.96), rgba(18, 12, 34, 0.96));
+    border: 1px solid var(--panel-edge);
+    border-radius: 18px;
+    padding: 16px;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+  }
+
+  #menuCard h2 {
+    margin: 0 0 12px 0;
+    font-size: 19px;
+    text-align: center;
+    letter-spacing: 1px;
+    color: var(--ink);
+  }
+
+  .menuItem {
+    display: block;
+    width: 100%;
+    margin-bottom: 7px;
+    padding: 11px;
+    font-size: 14px;
+    text-align: center;
+  }
+
+  .menuItem.danger { color: var(--danger); border-color: rgba(255, 84, 112, 0.4); }
+
+  /* ------------------------------------------------- sounds submenu */
+
+  #menuMain.hidden, #soundsPage.hidden { display: none; }
+
+  /* One channel per box, so the toggle and the slider that belong
+     together read as a pair. */
+  .soundGroup {
+    border: 1px solid var(--panel-edge);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 10px;
+    margin-bottom: 9px;
+  }
+
+  .soundGroup .menuItem { margin-bottom: 0; }
+
+  .sliderRow {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 10px;
+  }
+
+  .sliderLabel {
+    flex: 0 0 auto;
+    font-size: 10px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+  }
+
+  .sliderRow output {
+    flex: 0 0 36px;
+    text-align: right;
+    font-size: 12px;
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* A muted channel keeps its slider on screen so the level stays
+     readable, and dims it to say it is doing nothing right now. */
+  .soundGroup.off .sliderRow { opacity: 0.38; }
+
+  input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 22px;
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    cursor: pointer;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.13);
+    border: 1px solid var(--panel-edge);
+  }
+
+  input[type="range"]::-webkit-slider-thumb {
+    width: 18px;
+    height: 18px;
+    margin-top: -7px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 8px rgba(176, 124, 255, 0.55);
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  input[type="range"]::-moz-range-track {
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.13);
+    border: 1px solid var(--panel-edge);
+  }
+
+  input[type="range"]::-moz-range-thumb {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 0 8px rgba(176, 124, 255, 0.55);
+  }
+
+  /* Printed in the sounds panel when the music file will not load, so
+     the player learns why it is silent instead of guessing. */
+  #musicNote {
+    margin: 0 0 10px 0;
+    font-size: 11px;
+    line-height: 1.4;
+    text-align: center;
+    color: var(--danger);
+  }
+
+  #musicNote.hidden { display: none; }
+
+  #cardBtnAlt {
+    width: 100%;
+    margin-top: 8px;
+    padding: 11px;
+    font-size: 14px;
+  }
+
+  #cardBtnAlt.hidden { display: none; }
+
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(176, 124, 255, 0.5); }
+    50%      { box-shadow: 0 0 16px 3px rgba(176, 124, 255, 0.5); }
+  }
+
+  /* ---------------------------------------------------------- overlays */
+
+  #overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(6, 4, 13, 0.86);
+    backdrop-filter: blur(3px);
+    z-index: 10;
+  }
+
+  #overlay.hidden { display: none; }
+
+  #card {
+    width: 100%;
+    max-width: 340px;
+    background: linear-gradient(160deg, rgba(40, 28, 74, 0.96), rgba(18, 12, 34, 0.96));
+    border: 1px solid var(--panel-edge);
+    border-radius: 18px;
+    padding: 20px 18px;
+    text-align: center;
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+  }
+
+  #cardTitle {
+    font-size: 27px;
+    margin: 0 0 4px 0;
+    letter-spacing: 1px;
+    background: linear-gradient(90deg, #ff6ea9, #b07cff, #4fd6ff, #45e08a);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  #cardSub {
+    font-size: 13px;
+    color: var(--ink-dim);
+    margin: 0 0 14px 0;
+  }
+
+  #cardBody {
+    font-size: 13px;
+    line-height: 1.55;
+    text-align: left;
+    color: #d9d2f2;
+    margin-bottom: 16px;
+  }
+
+  #cardBody b { color: #fff; }
+
+  #cardBody .rule {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 7px;
+    align-items: baseline;
+  }
+
+  #cardBody .rule .pip {
+    flex: 0 0 auto;
+    font-size: 14px;
+  }
+
+  #cardBtn {
+    width: 100%;
+    padding: 13px;
+    font-size: 16px;
+    font-weight: bold;
+    background: linear-gradient(90deg, #7c5cff, #b07cff);
+    border-color: transparent;
+  }
+
+  #cardStats {
+    display: flex;
+    justify-content: center;
+    gap: 22px;
+    margin-bottom: 15px;
+  }
+
+  #cardStats div { text-align: center; }
+  #cardStats .n { font-size: 23px; font-weight: bold; }
+  #cardStats .k {
+    font-size: 10px;
+    color: var(--ink-dim);
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+  }
+
+  #toast {
+    position: absolute;
+    left: 50%;
+    top: 14%;
+    transform: translate(-50%, 0);
+    font-size: 22px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    pointer-events: none;
+    opacity: 0;
+    z-index: 5;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.8);
+    white-space: nowrap;
+  }
+
+  @media (min-width: 620px) {
+    #app { max-width: 520px; margin: 0 auto; }
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <div id="hud">
+    <div id="topRow">
+      <div class="stat">
+        <div class="label">Score</div>
+        <div class="value" id="scoreValue">0</div>
+      </div>
+      <div class="stat" id="movesStat">
+        <div class="label">Moves</div>
+        <div class="value" id="movesValue">20</div>
+      </div>
+      <div class="stat">
+        <div class="label">Level</div>
+        <div class="value" id="levelValue">1</div>
+      </div>
+    </div>
+    <div id="goalBar">
+      <div id="goalText">Link 20 red gems</div>
+      <div id="goalTrack"><div id="goalFill"></div></div>
+      <div id="goalCount">0/20</div>
+      <button id="menuBtn" title="Menu" aria-label="Menu">&#9776;</button>
+    </div>
+  </div>
+
+  <div id="stage">
+    <canvas id="board"></canvas>
+    <div id="toast"></div>
+    <div id="menuPanel" class="hidden">
+      <div id="menuCard">
+        <h2 id="menuTitle">Paused</h2>
+
+        <div id="menuMain">
+          <button class="menuItem" id="menuResume">Resume</button>
+          <button class="menuItem" id="menuSounds">Sounds</button>
+          <button class="menuItem" id="menuFull">Fullscreen</button>
+          <button class="menuItem" id="menuHelp">How to Play</button>
+          <button class="menuItem" id="menuSave">Save</button>
+          <button class="menuItem" id="menuSaveQuit">Save and Quit</button>
+          <button class="menuItem danger" id="menuQuit">Quit without Saving</button>
+        </div>
+
+        <div id="soundsPage" class="hidden">
+          <p id="musicNote" class="hidden"></p>
+
+          <div class="soundGroup" id="sfxGroup">
+            <button class="menuItem" id="sfxToggle">SFX: On</button>
+            <div class="sliderRow">
+              <span class="sliderLabel">Vol</span>
+              <input type="range" id="sfxSlider" min="0" max="100" step="1" value="100" aria-label="SFX volume">
+              <output id="sfxReadout">100%</output>
+            </div>
+          </div>
+
+          <div class="soundGroup" id="musicGroup">
+            <button class="menuItem" id="musicToggle">Music: On</button>
+            <div class="sliderRow">
+              <span class="sliderLabel">Vol</span>
+              <input type="range" id="musicSlider" min="0" max="100" step="1" value="60" aria-label="Music volume">
+              <output id="musicReadout">60%</output>
+            </div>
+          </div>
+
+          <button class="menuItem" id="soundsBack">Back</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="overlay" class="hidden">
+      <div id="card">
+        <h1 id="cardTitle"></h1>
+        <p id="cardSub"></p>
+        <div id="cardStats" style="display:none">
+          <div><div class="n" id="finalScore">0</div><div class="k">Score</div></div>
+          <div><div class="n" id="bestScore">0</div><div class="k">Best</div></div>
+        </div>
+        <div id="cardBody"></div>
+        <button id="cardBtn"></button>
+        <button id="cardBtnAlt" class="hidden"></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div id="chargeRow">
+      <span id="chargeLabel">CHARGE</span>
+      <div id="chargeTrack">
+        <div id="chargeFill"></div>
+        <div id="chargeTicks"></div>
+      </div>
+      <span id="chargeValue">0/36</span>
+    </div>
+    <div id="itemRow"></div>
+  </div>
+
+</div>
+
+<script>
+"use strict";
+
+/* ==================================================================
+   Prism Path
+   A single file connect-and-purge puzzle game.
+
+   Rules in short:
+     - Drag across touching gems of the same colour to link them.
+     - Release with 3 or more linked and they burst.
+     - Cross your own path to close a loop: every gem of that colour
+       on the board is wiped out.
+     - 5 or 6 linked forges a Bomb. 7 or more forges a Prism.
+     - The Blight creeps across the board and ends the run if it
+       takes fifteen cells. Linking a blighted gem cures it.
+   ================================================================== */
+
+/* ------------------------------------------------------------------
+   Board constants
+   ------------------------------------------------------------------ */
+
+const COLS = 7;
+
+/* Rows are chosen once at boot so a tall phone gets a taller board
+   and fills the height it has. Everything that could otherwise drift
+   with board size is proportional to it: the stone cap and the blight
+   threshold both scale. */
+let ROWS = 8;
+
+const GEM_COLOURS = [
+  { name: "red",    core: "#ff5470", rim: "#ffb3c0", glow: "#ff2f55", shape: "circle"   },
+  { name: "amber",  core: "#ffab35", rim: "#ffe0a8", glow: "#ff8a00", shape: "diamond"  },
+  { name: "green",  core: "#45e08a", rim: "#b6ffd6", glow: "#12c568", shape: "square"   },
+  { name: "blue",   core: "#3fb0ff", rim: "#b8e4ff", glow: "#0d84e8", shape: "triangle" },
+  { name: "violet", core: "#b07cff", rim: "#e2ccff", glow: "#8b4dff", shape: "hexagon"  }
+];
+
+/* Fraction of a cell that responds to a touch. Anything below 0.707
+   keeps diagonal drags from clipping their neighbours. */
+const HIT_RADIUS = 0.55;
+
+const MIN_LINK = 3;
+const BOMB_LINK = 5;      // linking this many forges a bomb
+const PRISM_LINK = 7;     // linking this many forges a prism
+
+/* How long a gem spends bursting before it leaves the board. */
+const BURST_SECONDS = 0.24;
+
+/* A board wide clear does not go off all at once. Every cell waits
+   this long per cell of distance from the middle of the loop, so the
+   clear reads as a wave rolling outwards. */
+const WAVE_SECONDS_PER_CELL = 0.05;
+
+/* A bomb clears the eight cells around it and cracks a stone once. A
+   bomb caught inside a closed loop reaches three cells in every
+   direction and cracks a stone three times. */
+const BOMB_BLAST_RADIUS = 1;
+const TRIPLE_BLAST_RADIUS = 3;
+const BOMB_STONE_DAMAGE = 1;
+const TRIPLE_STONE_DAMAGE = 3;
+/* The board is between 8 and 12 rows depending on the screen, so a
+   flat blight threshold would make small phones harder than large
+   ones. Scaling it keeps the pressure the same everywhere. */
+function blightLossThreshold() {
+  return Math.max(8, Math.round(ROWS * COLS * 0.14));
+}
+
+/* Blight carried between levels always leaves headroom, so a new level
+   can never open already lost. */
+function blightCarryCap() {
+  return blightLossThreshold() - 3;
+}
+
+/* One shared meter pays for every item. The differing costs are the
+   whole decision: spend small and often, or bank for the big one. */
+const CHARGE_MAX = 36;
+const ITEMS = [
+  { id: "shuffle", cost: 8,  glyph: "↻", label: "Shuffle", aims: false },
+  { id: "bomb",    cost: 12, glyph: "✹", label: "Bomb",    aims: true  },
+  { id: "moves",   cost: 20, glyph: "⇧", label: "+2 Move", aims: false },
+  { id: "purge",   cost: 36, glyph: "◈", label: "Purge",   aims: true  }
+];
+
+const CONTINUES_AT_START = 3;
+const CONTINUE_EVERY_LEVELS = 10;
+
+const SAVE_KEY = "prismPathSave";
+const BEST_KEY = "prismPathBest";
+const SETTINGS_KEY = "prismPathAudio";
+
+/* How many colours are in play at each level. Fewer colours early on
+   makes the opening levels forgiving. */
+function coloursForLevel(level) {
+  if (level <= 1) return 4;
+  return 5;
+}
+
+/* ------------------------------------------------------------------
+   Cell factories
+   ------------------------------------------------------------------ */
+
+function makeGem(colourIndex) {
+  return {
+    kind: "gem",
+    colour: colourIndex,
+    special: "none",     // "none" | "bomb" | "prism"
+    blighted: false,
+    hp: 0,
+    offsetY: 0,          // pixels above its resting place while falling
+    fallSpeed: 0,
+    scale: 0,            // grows to 1 on spawn
+    spin: 0,
+    doomed: false,       // marked for removal once the burst finishes
+    dying: 0,            // seconds left in the burst animation
+    dyingMax: BURST_SECONDS,
+    dyingDelay: 0        // seconds to wait before that burst starts
+  };
+}
+
+function makeStone(hp) {
+  return {
+    kind: "stone",
+    colour: -1,
+    special: "none",
+    blighted: false,
+    hp: hp,
+    maxHp: hp,
+    offsetY: 0,
+    fallSpeed: 0,
+    scale: 0,
+    spin: 0,
+    doomed: false,
+    dying: 0,
+    dyingMax: BURST_SECONDS,
+    dyingDelay: 0
+  };
+}
+
+/* ------------------------------------------------------------------
+   Global game state
+   ------------------------------------------------------------------ */
+
+const game = {
+  board: [],
+  phase: "title",        // "title" | "idle" | "bursting" | "falling" | "over" | "levelDone"
+  path: [],              // list of {row, col} making up the current link
+  pathColour: -1,
+  loopClosed: false,
+  score: 0,
+  level: 1,
+  moves: 20,
+  bestScore: 0,
+  charge: 0,
+  aiming: "none",        // "none" | an item id awaiting a tap on the board
+  movesSinceBlight: 0,
+  goal: null,
+  burstTimer: 0,
+  shake: 0,
+  time: 0,
+  continues: CONTINUES_AT_START,
+  scoreAtLevelStart: 0,  // what a continue rewinds your score to
+  blightCarry: 0         // blight that follows you into the next level
+};
+
+const particles = [];
+const floaters = [];
+
+/* ------------------------------------------------------------------
+   DOM handles
+   ------------------------------------------------------------------ */
+
+const canvas = document.getElementById("board");
+const ctx = canvas.getContext("2d");
+const stage = document.getElementById("stage");
+const scoreValue = document.getElementById("scoreValue");
+const movesValue = document.getElementById("movesValue");
+const movesStat = document.getElementById("movesStat");
+const levelValue = document.getElementById("levelValue");
+const goalText = document.getElementById("goalText");
+const goalCount = document.getElementById("goalCount");
+const goalFill = document.getElementById("goalFill");
+const overlay = document.getElementById("overlay");
+const cardTitle = document.getElementById("cardTitle");
+const cardSub = document.getElementById("cardSub");
+const cardBody = document.getElementById("cardBody");
+const cardBtn = document.getElementById("cardBtn");
+const cardStats = document.getElementById("cardStats");
+const finalScoreEl = document.getElementById("finalScore");
+const bestScoreEl = document.getElementById("bestScore");
+const cardBtnAlt = document.getElementById("cardBtnAlt");
+const chargeFill = document.getElementById("chargeFill");
+const chargeTicks = document.getElementById("chargeTicks");
+const chargeValue = document.getElementById("chargeValue");
+const itemRow = document.getElementById("itemRow");
+const menuBtn = document.getElementById("menuBtn");
+const menuPanel = document.getElementById("menuPanel");
+const menuResume = document.getElementById("menuResume");
+const menuTitle = document.getElementById("menuTitle");
+const menuMain = document.getElementById("menuMain");
+const menuSounds = document.getElementById("menuSounds");
+const soundsPage = document.getElementById("soundsPage");
+const soundsBack = document.getElementById("soundsBack");
+const musicNote = document.getElementById("musicNote");
+const sfxGroup = document.getElementById("sfxGroup");
+const sfxToggle = document.getElementById("sfxToggle");
+const sfxSlider = document.getElementById("sfxSlider");
+const sfxReadout = document.getElementById("sfxReadout");
+const musicGroup = document.getElementById("musicGroup");
+const musicToggle = document.getElementById("musicToggle");
+const musicSlider = document.getElementById("musicSlider");
+const musicReadout = document.getElementById("musicReadout");
+const menuFull = document.getElementById("menuFull");
+const menuHelp = document.getElementById("menuHelp");
+const menuSave = document.getElementById("menuSave");
+const menuSaveQuit = document.getElementById("menuSaveQuit");
+const menuQuit = document.getElementById("menuQuit");
+const toast = document.getElementById("toast");
+
+/* Layout numbers recomputed on every resize. */
+const layout = {
+  cell: 40,
+  originX: 0,
+  originY: 0,
+  width: 0,
+  height: 0,
+  pixelRatio: 1
+};
+
+/* ------------------------------------------------------------------
+   Sound: everything is synthesised, no audio files needed
+   ------------------------------------------------------------------ */
+
+/* Headroom trim on the whole effects bus. Every synth voice below was
+   written and balanced against this figure, so the volume slider
+   scales it rather than replacing it. */
+const SFX_HEADROOM = 0.9;
+
+const sound = {
+  ctx: null,
+  bus: null,
+  enabled: true,
+  volume: 1
+};
+
+function ensureAudio() {
+  if (sound.ctx === null) {
+    const Ctor = window.AudioContext;
+    if (typeof Ctor !== "function") {
+      sound.enabled = false;
+      return;
+    }
+    sound.ctx = new Ctor();
+
+    /* Every voice runs through one compressor. A twenty five gem break
+       fires the crack, nine shards, an eight note run and a thump at
+       the same moment, and straight into the destination that sums
+       past full scale and clips. */
+    const now = sound.ctx.currentTime;
+
+    const limiter = sound.ctx.createDynamicsCompressor();
+    limiter.threshold.setValueAtTime(-10, now);
+    limiter.knee.setValueAtTime(6, now);
+    limiter.ratio.setValueAtTime(12, now);
+    limiter.attack.setValueAtTime(0.003, now);
+    limiter.release.setValueAtTime(0.18, now);
+
+    const master = sound.ctx.createGain();
+    master.gain.setValueAtTime(SFX_HEADROOM * sound.volume, now);
+
+    master.connect(limiter);
+    limiter.connect(sound.ctx.destination);
+    sound.bus = master;
+  }
+  if (sound.ctx.state === "suspended") {
+    sound.ctx.resume();
+  }
+}
+
+/* Where every voice connects. Only ever called once the context is up,
+   so the bus is always there by the time anything asks for it. */
+function soundBus() {
+  return sound.bus;
+}
+
+/* The slider moves while gems are still ringing out. Ramping over a
+   few milliseconds instead of jumping keeps the change from clicking
+   through whatever is mid note. Silent until the context exists,
+   because ensureAudio reads the volume when it builds the bus. */
+function applySfxVolume() {
+  if (sound.ctx === null) return;
+
+  sound.bus.gain.setTargetAtTime(SFX_HEADROOM * sound.volume, sound.ctx.currentTime, 0.02);
+}
+
+function playTone(frequency, duration, type, volume) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const now = sound.ctx.currentTime;
+  const osc = sound.ctx.createOscillator();
+  const gain = sound.ctx.createGain();
+
+  osc.type = type;
+  osc.frequency.setValueAtTime(frequency, now);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(volume, now + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+
+  osc.connect(gain);
+  gain.connect(soundBus());
+  osc.start(now);
+  osc.stop(now + duration + 0.02);
+}
+
+/* Each extra gem in a link steps the note up a semitone, so a long
+   chain plays as a rising run. */
+function playLinkNote(step) {
+  const base = 294;
+  const frequency = base * Math.pow(2, step / 12);
+  playTone(frequency, 0.16, "triangle", 0.16);
+}
+
+function playNoiseHit(volume) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const now = sound.ctx.currentTime;
+  const length = Math.floor(sound.ctx.sampleRate * 0.22);
+  const buffer = sound.ctx.createBuffer(1, length, sound.ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for (let i = 0; i < length; i++) {
+    const fade = 1 - i / length;
+    data[i] = (Math.random() * 2 - 1) * fade * fade;
+  }
+
+  const source = sound.ctx.createBufferSource();
+  const gain = sound.ctx.createGain();
+  source.buffer = buffer;
+  gain.gain.setValueAtTime(volume, now);
+
+  source.connect(gain);
+  gain.connect(soundBus());
+  source.start(now);
+}
+
+function playFanfare() {
+  const notes = [392, 494, 587, 784];
+  for (let i = 0; i < notes.length; i++) {
+    window.setTimeout(function () {
+      playTone(notes[i], 0.3, "triangle", 0.15);
+    }, i * 110);
+  }
+}
+
+function playFailure() {
+  const notes = [330, 262, 196, 147];
+  for (let i = 0; i < notes.length; i++) {
+    window.setTimeout(function () {
+      playTone(notes[i], 0.42, "sawtooth", 0.12);
+    }, i * 150);
+  }
+}
+
+/* ---- SHATTER SOUND: BEGIN ---- */
+
+/* A break is a spray of glass, so the sound is built the same way: a
+   short noise crack for the impact, a handful of high shards ringing
+   off it at random pitches, a rising run underneath, and from the
+   bigger tiers a low thump for weight. Everything scales with how many
+   gems went, so a five gem link and a twenty five gem sweep are
+   recognisably the same sound at different sizes. */
+
+const SHATTER_MIN_SHARDS = 3;
+const SHATTER_MAX_SHARDS = 9;
+
+/* A major pentatonic run, so any number of notes off the front of it
+   still sounds like it belongs together. */
+const SHATTER_RUN = [0, 2, 4, 7, 9, 12, 14, 16, 19];
+
+function shatterShardCount(count) {
+  const growth = Math.min(1, count / 26);
+  const extra = Math.round((SHATTER_MAX_SHARDS - SHATTER_MIN_SHARDS) * growth);
+  return SHATTER_MIN_SHARDS + extra;
+}
+
+/* The glassy part: short, high, slightly detuned sines that decay fast
+   and land a few milliseconds apart, so they scatter instead of
+   arriving as one chord. */
+function playShards(count) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const shards = shatterShardCount(count);
+  const now = sound.ctx.currentTime;
+
+  for (let i = 0; i < shards; i++) {
+    const spread = 1 + Math.random() * 1.6;
+    const frequency = 1400 * spread;
+    const startAt = now + i * 0.012 + Math.random() * 0.01;
+    const length = 0.07 + Math.random() * 0.09;
+
+    const osc = sound.ctx.createOscillator();
+    const gain = sound.ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(frequency, startAt);
+    osc.frequency.exponentialRampToValueAtTime(frequency * 0.72, startAt + length);
+
+    gain.gain.setValueAtTime(0, startAt);
+    gain.gain.linearRampToValueAtTime(0.075, startAt + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + length);
+
+    osc.connect(gain);
+    gain.connect(soundBus());
+    osc.start(startAt);
+    osc.stop(startAt + length + 0.02);
+  }
+}
+
+/* The crack: filtered noise, brighter and longer the bigger the break. */
+function playShatterCrack(count) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const growth = Math.min(1, count / 26);
+  const now = sound.ctx.currentTime;
+  const length = 0.16 + growth * 0.2;
+  const samples = Math.floor(sound.ctx.sampleRate * length);
+
+  const buffer = sound.ctx.createBuffer(1, samples, sound.ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for (let i = 0; i < samples; i++) {
+    const fade = 1 - i / samples;
+    data[i] = (Math.random() * 2 - 1) * fade * fade;
+  }
+
+  const source = sound.ctx.createBufferSource();
+  source.buffer = buffer;
+
+  /* Sweeping the filter down turns a flat hiss into something that
+     reads as glass falling away. */
+  const filter = sound.ctx.createBiquadFilter();
+  filter.type = "highpass";
+  filter.frequency.setValueAtTime(2600 + growth * 1800, now);
+  filter.frequency.exponentialRampToValueAtTime(900, now + length);
+
+  const gain = sound.ctx.createGain();
+  gain.gain.setValueAtTime(0.11 + growth * 0.09, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + length);
+
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(soundBus());
+  source.start(now);
+}
+
+/* The run underneath. More gems means more of the scale, which is what
+   makes a big break feel like it is still climbing after a small one
+   would have finished. */
+function playShatterRun(count) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const growth = Math.min(1, count / 26);
+  const notes = 3 + Math.round(growth * 5);
+  const step = 0.055 - growth * 0.015;
+
+  for (let i = 0; i < notes; i++) {
+    const semitone = SHATTER_RUN[i];
+    const frequency = 330 * Math.pow(2, semitone / 12);
+
+    window.setTimeout(function () {
+      playTone(frequency, 0.2, "triangle", 0.09);
+    }, i * step * 1000);
+  }
+}
+
+/* Weight under the big ones only. A five gem link does not need it and
+   would sound muddy with it. */
+function playShatterThump(count) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+  if (count < 15) return;
+
+  const now = sound.ctx.currentTime;
+  const osc = sound.ctx.createOscillator();
+  const gain = sound.ctx.createGain();
+
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(96, now);
+  osc.frequency.exponentialRampToValueAtTime(52, now + 0.18);
+
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.2, now + 0.012);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+
+  osc.connect(gain);
+  gain.connect(soundBus());
+  osc.start(now);
+  osc.stop(now + 0.24);
+}
+
+/* The bell that lands with the word itself, one octave per tier so the
+   five milestones are telling apart with your eyes shut. */
+function playMilestoneChime(tierIndex) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const base = 523 * Math.pow(2, tierIndex / 12);
+  const now = sound.ctx.currentTime;
+
+  for (let i = 0; i < 2; i++) {
+    const detune = i === 0 ? 1 : 1.005;
+    const osc = sound.ctx.createOscillator();
+    const gain = sound.ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(base * 2 * detune, now);
+
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(0.07, now + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.7);
+
+    osc.connect(gain);
+    gain.connect(soundBus());
+    osc.start(now);
+    osc.stop(now + 0.75);
+  }
+}
+
+/* One call for the whole break. */
+function playShatter(count) {
+  playShatterCrack(count);
+  playShards(count);
+  playShatterRun(count);
+  playShatterThump(count);
+}
+
+/* ---- SHATTER SOUND: END ---- */
+
+
+/* ---- LOOP SPECIAL SOUNDS: BEGIN ---- */
+
+/* Drawing a ring around a special is the biggest thing the player can
+   do, so each one gets its own voice. They all sit on the same
+   pentatonic as the shatter run, so they land in key with whatever
+   else is firing at the same moment. */
+
+/* A short noise burst shaped by a filter. The workhorse under the
+   heavier effects: swept down it reads as rubble, swept up it reads as
+   air being pulled in. */
+function playFilteredNoise(seconds, volume, filterType, startHz, endHz) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const now = sound.ctx.currentTime;
+  const samples = Math.floor(sound.ctx.sampleRate * seconds);
+  const buffer = sound.ctx.createBuffer(1, samples, sound.ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+
+  for (let i = 0; i < samples; i++) {
+    const fade = 1 - i / samples;
+    data[i] = (Math.random() * 2 - 1) * fade;
+  }
+
+  const source = sound.ctx.createBufferSource();
+  source.buffer = buffer;
+
+  const filter = sound.ctx.createBiquadFilter();
+  filter.type = filterType;
+  filter.frequency.setValueAtTime(startHz, now);
+  filter.frequency.exponentialRampToValueAtTime(endHz, now + seconds);
+
+  const gain = sound.ctx.createGain();
+  gain.gain.setValueAtTime(volume, now);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
+
+  source.connect(filter);
+  filter.connect(gain);
+  gain.connect(soundBus());
+  source.start(now);
+}
+
+/* A sine dropping in pitch. Weight under a blast. */
+function playSubDrop(fromHz, toHz, seconds, volume) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const now = sound.ctx.currentTime;
+  const osc = sound.ctx.createOscillator();
+  const gain = sound.ctx.createGain();
+
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(fromHz, now);
+  osc.frequency.exponentialRampToValueAtTime(toHz, now + seconds);
+
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(volume, now + 0.014);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + seconds);
+
+  osc.connect(gain);
+  gain.connect(soundBus());
+  osc.start(now);
+  osc.stop(now + seconds + 0.03);
+}
+
+/* Notes off the pentatonic, played in order a fixed gap apart. */
+function playRisingRun(baseHz, semitones, gapSeconds, noteSeconds, type, volume) {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const now = sound.ctx.currentTime;
+
+  for (let i = 0; i < semitones.length; i++) {
+    const frequency = baseHz * Math.pow(2, semitones[i] / 12);
+    const startAt = now + i * gapSeconds;
+
+    const osc = sound.ctx.createOscillator();
+    const gain = sound.ctx.createGain();
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(frequency, startAt);
+
+    gain.gain.setValueAtTime(0, startAt);
+    gain.gain.linearRampToValueAtTime(volume, startAt + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, startAt + noteSeconds);
+
+    osc.connect(gain);
+    gain.connect(soundBus());
+    osc.start(startAt);
+    osc.stop(startAt + noteSeconds + 0.03);
+  }
+}
+
+/* The ring has just closed and there is something in the middle of it.
+   Three notes climbing tell the player the move is worth more than the
+   loop they were expecting. */
+function playLoopArmed() {
+  playRisingRun(392, [0, 4, 7], 0.07, 0.26, "triangle", 0.12);
+}
+
+/* A bomb going off with three cells of reach. Same shape as the plain
+   blast, longer and deeper, with the rubble arriving after the crack. */
+function playTripleBlast() {
+  playFilteredNoise(0.42, 0.3, "lowpass", 5200, 500);
+  playSubDrop(150, 38, 0.5, 0.3);
+  playRisingRun(147, [0, -5], 0.09, 0.4, "square", 0.1);
+}
+
+/* Every stone on the board going at once. All bottom end and grit, no
+   melody, because stone is the one thing on this board that is not
+   made of glass. */
+function playStonesShatter() {
+  playFilteredNoise(0.55, 0.26, "bandpass", 1800, 260);
+  playSubDrop(110, 44, 0.45, 0.24);
+
+  /* A second crunch a beat later, so it reads as a boardful of them. */
+  window.setTimeout(function () {
+    playFilteredNoise(0.4, 0.18, "bandpass", 1400, 220);
+  }, 90);
+}
+
+/* Every blight cured. It starts as the blight's own sour sawtooth and
+   resolves onto a clean bell, so the sound itself is the cure. */
+function playBlightPurge() {
+  playRisingRun(98, [0, 1], 0.06, 0.3, "sawtooth", 0.11);
+  playFilteredNoise(0.5, 0.12, "highpass", 400, 3400);
+
+  window.setTimeout(function () {
+    playRisingRun(523, [0, 7, 12], 0.06, 0.55, "sine", 0.1);
+  }, 150);
+}
+
+/* The prism nova. Air pulled in, a sub under it, seven notes climbing
+   the pentatonic, then a detuned pair left ringing over the top while
+   the board empties. This is the loudest thing in the game and it is
+   meant to be. */
+function playPrismNova() {
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  playFilteredNoise(0.75, 0.16, "highpass", 300, 6000);
+  playSubDrop(170, 40, 0.7, 0.3);
+  playRisingRun(523, [0, 2, 4, 7, 9, 12, 16], 0.062, 0.42, "triangle", 0.11);
+
+  const now = sound.ctx.currentTime;
+  const tailStart = now + 0.44;
+
+  for (let i = 0; i < 3; i++) {
+    const detune = 1 + i * 0.004;
+    const osc = sound.ctx.createOscillator();
+    const gain = sound.ctx.createGain();
+
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(1046 * detune, tailStart);
+
+    gain.gain.setValueAtTime(0, tailStart);
+    gain.gain.linearRampToValueAtTime(0.055, tailStart + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, tailStart + 1.5);
+
+    osc.connect(gain);
+    gain.connect(soundBus());
+    osc.start(tailStart);
+    osc.stop(tailStart + 1.55);
+  }
+}
+
+/* ---- LOOP SPECIAL SOUNDS: END ---- */
+
+
+/* ------------------------------------------------------------------
+   Music
+
+   The effects above are synthesised on the fly. Music is a real file,
+   so it is handled on its own terms: one <audio> element per track,
+   played through the element's own volume instead of the Web Audio
+   graph. That is deliberate. Opening this game as a file on a phone
+   gives the page an opaque origin, where fetch and
+   createMediaElementSource both fall over and a plain audio element
+   still plays. The effects bus would not want music through its
+   limiter anyway, or a big gem break would duck the soundtrack every
+   time it went off.
+
+   To add music for a level later:
+     1. Put the file in audio/ and add an entry to MUSIC_TRACKS.
+     2. Return its id from musicTrackForLevel for the levels it covers.
+   Nothing else needs touching. Every level start already asks for the
+   right track, and swapping one track for another runs through the
+   same one-at-a-time machinery used here.
+   ------------------------------------------------------------------ */
+
+const MUSIC_TRACKS = {
+  ambient: {
+    url: "audio/prism-path-ambient.ogg",
+
+    /* Per track attenuation between 0 and 1, so a loud track added
+       later can be pulled back to sit level with a quiet one without
+       the player having to move their slider. */
+    trim: 1
+  }
+};
+
+function musicTrackForLevel(level) {
+  /* One bed for the whole run today. The level is passed in already so
+     that per level music is a matter of branching here and nothing
+     else. */
+  return "ambient";
+}
+
+const music = {
+  enabled: true,
+  volume: 0.6,
+
+  /* Built once per track and kept. An element is a single stream and
+     cannot play itself twice over, which is the first of the two
+     things keeping the music from doubling up. */
+  elements: {},
+
+  /* What the game wants playing, and what is actually playing. Callers
+     set the first and let syncMusic reconcile. Nothing anywhere else
+     starts or stops a track directly. */
+  wantedTrackId: null,
+  playingTrackId: null,
+
+  /* Counts the starts. Pausing an element rejects the play promise it
+     had in the air, so a quick off and on leaves an old rejection
+     arriving after the new start has already succeeded. The number the
+     start took is checked when its rejection lands, and only the
+     newest start is allowed to act on one. */
+  attempt: 0,
+
+  fileFailed: false
+};
+
+function musicElement(trackId) {
+  const existing = music.elements[trackId];
+  if (existing !== undefined) return existing;
+
+  const track = MUSIC_TRACKS[trackId];
+  if (track === undefined) {
+    throw new Error("Prism Path: asked for a music track called '" + trackId +
+      "' that is not in MUSIC_TRACKS.");
+  }
+
+  const element = new Audio();
+  element.loop = true;
+  element.preload = "auto";
+  element.volume = 0;
+
+  /* A missing or unplayable file is a real thing that happens, and a
+     silent game with no explanation is the worst way to meet it. The
+     reason goes to the console and onto the sounds panel. */
+  element.addEventListener("error", function () {
+    music.fileFailed = true;
+    console.error("Prism Path could not load the music file at " + track.url +
+      ". The game will run without music.");
+    refreshMusicNote();
+  });
+
+  element.src = track.url;
+
+  music.elements[trackId] = element;
+  return element;
+}
+
+/* The only place a track is allowed to start or stop. It compares what
+   the game wants against what is sounding and moves one to the other,
+   so calling it twice, ten times, or in the middle of its own work
+   changes nothing after the first call. Every restart, refresh, resume,
+   continue, retry and trip back to the menu comes through here, which
+   is why none of them can leave two copies playing. */
+function syncMusic() {
+  const wanted = music.enabled === true ? music.wantedTrackId : null;
+
+  if (wanted === music.playingTrackId) {
+    applyMusicVolume();
+    return;
+  }
+
+  if (music.playingTrackId !== null) {
+    const leaving = musicElement(music.playingTrackId);
+
+    /* Pausing rejects whatever play promise this element still had
+       running, so that promise stops speaking for the state here. */
+    music.attempt++;
+    leaving.pause();
+
+    /* Stopped means stopped. The next start is from the top, so the
+       state a track is left in never depends on how it was left. */
+    leaving.currentTime = 0;
+    music.playingTrackId = null;
+  }
+
+  if (wanted === null) return;
+
+  const element = musicElement(wanted);
+
+  /* Claimed up front, before play is even asked for. play settles a
+     tick later, and a second syncMusic landing in that gap has to find
+     the track already taken. */
+  music.playingTrackId = wanted;
+  const attempt = ++music.attempt;
+  applyMusicVolume();
+
+  const started = element.play();
+
+  /* Browsers old enough to predate the promise returning play give back
+     nothing here, so there is no rejection to wait on and the start has
+     already either happened or not. */
+  if (started === undefined) return;
+
+  started.catch(function (refused) {
+    /* Every path that starts music sits behind a button press, so the
+       autoplay rules should never bite. If they ever do, the claim
+       above is untrue and has to be handed back, or the track could
+       never start again.
+
+       Only the newest start may hand it back. An older one rejecting
+       just means it was paused on the way, and the track sounding now
+       is not the one it was trying to begin. */
+    if (music.attempt !== attempt) return;
+    if (music.playingTrackId !== wanted) return;
+
+    music.playingTrackId = null;
+    console.error("Prism Path could not start the music.", refused);
+  });
+}
+
+function applyMusicVolume() {
+  if (music.playingTrackId === null) return;
+
+  const track = MUSIC_TRACKS[music.playingTrackId];
+  const element = musicElement(music.playingTrackId);
+  element.volume = music.volume * track.trim;
+}
+
+/* Called wherever a level begins: a new run, the next level, a retry
+   on a continue, and a saved run picked back up. */
+function setMusicForLevel(level) {
+  music.wantedTrackId = musicTrackForLevel(level);
+  syncMusic();
+}
+
+/* The run has ended or the player has gone back to the title. Music
+   never plays over a game that has not been started. */
+function stopMusic() {
+  music.wantedTrackId = null;
+  syncMusic();
+}
+
+
+/* ------------------------------------------------------------------
+   Board helpers
+   ------------------------------------------------------------------ */
+
+function insideBoard(row, col) {
+  return row >= 0 && row < ROWS && col >= 0 && col < COLS;
+}
+
+function cellAt(row, col) {
+  return game.board[row][col];
+}
+
+function randomColour() {
+  const range = coloursForLevel(game.level);
+  return Math.floor(Math.random() * range);
+}
+
+function buildBoard() {
+  game.board = [];
+  for (let row = 0; row < ROWS; row++) {
+    const line = [];
+    for (let col = 0; col < COLS; col++) {
+      const gem = makeGem(randomColour());
+      gem.scale = 1;
+      line.push(gem);
+    }
+    game.board.push(line);
+  }
+}
+
+/* Scatter stones for the levels that ask for them. Stones never sit on
+   the top row so they cannot wall off fresh spawns. */
+function scatterStones(count, toughness) {
+  const placeable = (ROWS - 1) * COLS;
+  if (count > placeable) {
+    throw new Error("asked for " + count + " stones but only " + placeable + " cells can hold one");
+  }
+
+  let placed = 0;
+  let attempts = 0;
+
+  while (placed < count && attempts < 4000) {
+    attempts++;
+    const row = 1 + Math.floor(Math.random() * (ROWS - 1));
+    const col = Math.floor(Math.random() * COLS);
+
+    if (cellAt(row, col).kind === "gem") {
+      const stone = makeStone(toughness);
+      stone.scale = 1;
+      game.board[row][col] = stone;
+      placed++;
+    }
+  }
+
+  /* Placing fewer than asked would hand the player a level whose goal
+     cannot be reached, so it fails here where the cause is obvious. */
+  if (placed < count) {
+    throw new Error("only placed " + placed + " of " + count + " stones");
+  }
+}
+
+/* ------------------------------------------------------------------
+   Level goals
+   ------------------------------------------------------------------ */
+
+function makeGoalForLevel(level) {
+  const kindIndex = (level - 1) % 3;
+
+  if (kindIndex === 0) {
+    const colour = Math.floor(Math.random() * coloursForLevel(level));
+    const target = 14 + level;
+    return {
+      kind: "colour",
+      colour: colour,
+      target: target,
+      progress: 0,
+      label: "Burst " + target + " " + GEM_COLOURS[colour].name + " gems"
+    };
+  }
+
+  if (kindIndex === 1) {
+    const target = 600 + level * 550;
+    return {
+      kind: "score",
+      colour: -1,
+      target: target,
+      progress: 0,
+      label: "Score " + target + " points"
+    };
+  }
+
+  const target = stoneCountForLevel(level);
+  return {
+    kind: "stone",
+    colour: -1,
+    target: target,
+    progress: 0,
+    label: "Shatter " + target + " stones"
+  };
+}
+
+/* Stones are capped at roughly a third of the board. Past that point
+   the level gets harder by making each stone tougher, which costs
+   moves without eating the space you need to play in. */
+function stoneCountForLevel(level) {
+  const wanted = 3 + Math.floor(level / 2);
+  const cap = Math.floor(ROWS * COLS * 0.3);
+  return Math.min(wanted, cap);
+}
+
+/* A stone level costs about 1.85 moves per hit point and does not care
+   how many stones there are, because a denser board damages more of
+   them per burst. Toughness rising once every twelve levels therefore
+   costs 0.154 moves per level, well under the budget's 0.333. It has
+   no cap, which is what keeps stone levels meaningful at any depth. */
+function stoneToughnessForLevel(level) {
+  return 2 + Math.floor(level / 12);
+}
+
+/* The budget stops shrinking at level 10 and then creeps back up by
+   one move every three levels, which is 0.333 moves per level.
+
+   Measured cost of each goal type per level:
+     colour  0.258   (3.88 goal gems cleared per move)
+     score   0.230
+     stone   0.154   (1.85 moves per hit point, +1 hp every 12 levels)
+
+   All three are below the budget's growth, so the gap widens forever
+   and no level can outrun the moves you are given to clear it. */
+function movesForLevel(level) {
+  if (level <= 2) return 22;
+  if (level <= 5) return 20;
+  if (level <= 9) return 18;
+  return 16 + Math.floor((level - 10) / 3);
+}
+
+/* Blight starts appearing on level three and quickens as you climb. */
+function blightIntervalForLevel(level) {
+  if (level < 3) return 0;
+  if (level < 6) return 4;
+  if (level < 10) return 3;
+  return 2;
+}
+
+/* ------------------------------------------------------------------
+   Starting and advancing a run
+   ------------------------------------------------------------------ */
+
+function startRun() {
+  game.score = 0;
+  game.level = 1;
+  game.charge = 0;
+  game.aiming = "none";
+  game.continues = CONTINUES_AT_START;
+  game.blightCarry = 0;
+  startLevel();
+}
+
+/* Lay out a fresh level. Called for a new level, for a retry after a
+   continue, and after loading a save. */
+function startLevel() {
+  game.moves = movesForLevel(game.level);
+  game.goal = makeGoalForLevel(game.level);
+  game.movesSinceBlight = 0;
+  game.path = [];
+  game.pathColour = -1;
+  game.loopClosed = false;
+  game.aiming = "none";
+  game.scoreAtLevelStart = game.score;
+  particles.length = 0;
+  floaters.length = 0;
+  shockwaves.length = 0;
+  screenFlash = null;
+  milestoneWord = null;
+
+  buildBoard();
+
+  const toughness = stoneToughnessForLevel(game.level);
+  if (game.goal.kind === "stone") {
+    scatterStones(game.goal.target, toughness);
+  } else if (game.level >= 4) {
+    scatterStones(2, toughness);
+  }
+
+  seedBlight();
+  ensureSolvableBoard();
+
+  game.phase = "idle";
+  setMusicForLevel(game.level);
+  refreshHud();
+  saveGame();
+}
+
+/* The blight you failed to clear last level follows you into this one.
+   New levels also get their own seeds, and whichever is larger wins so
+   the two do not compound into an unplayable opening. */
+function seedBlight() {
+  const ownSeeds = game.level >= 4 ? Math.min(3, 1 + Math.floor(game.level / 5)) : 0;
+  const cap = blightCarryCap();
+  const carried = Math.min(game.blightCarry, cap);
+  const total = Math.min(Math.max(ownSeeds, carried), cap);
+
+  for (let i = 0; i < total; i++) {
+    infectRandomCell();
+  }
+}
+
+/* ------------------------------------------------------------------
+   The Blight
+   ------------------------------------------------------------------ */
+
+function countBlight() {
+  let total = 0;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (cellAt(row, col).blighted === true) total++;
+    }
+  }
+  return total;
+}
+
+function infectRandomCell() {
+  const candidates = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind === "gem" && cell.blighted === false) {
+        candidates.push({ row: row, col: col });
+      }
+    }
+  }
+  if (candidates.length === 0) return;
+
+  const pick = candidates[Math.floor(Math.random() * candidates.length)];
+  cellAt(pick.row, pick.col).blighted = true;
+  spawnBlightPuff(pick.row, pick.col);
+}
+
+/* Existing blight reaches into a neighbouring gem. */
+function spreadBlight() {
+  const sources = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (cellAt(row, col).blighted === true) {
+        sources.push({ row: row, col: col });
+      }
+    }
+  }
+  if (sources.length === 0) {
+    infectRandomCell();
+    return;
+  }
+
+  const from = sources[Math.floor(Math.random() * sources.length)];
+  const targets = [];
+  const steps = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  for (let i = 0; i < steps.length; i++) {
+    const row = from.row + steps[i][0];
+    const col = from.col + steps[i][1];
+    if (insideBoard(row, col)) {
+      const cell = cellAt(row, col);
+      if (cell.kind === "gem" && cell.blighted === false) {
+        targets.push({ row: row, col: col });
+      }
+    }
+  }
+
+  if (targets.length === 0) {
+    infectRandomCell();
+    return;
+  }
+
+  const pick = targets[Math.floor(Math.random() * targets.length)];
+  cellAt(pick.row, pick.col).blighted = true;
+  spawnBlightPuff(pick.row, pick.col);
+  playTone(90, 0.3, "sawtooth", 0.09);
+}
+
+function advanceBlight() {
+  const interval = blightIntervalForLevel(game.level);
+  if (interval === 0) return;
+
+  game.movesSinceBlight++;
+  if (game.movesSinceBlight < interval) return;
+
+  game.movesSinceBlight = 0;
+  spreadBlight();
+}
+
+/* ------------------------------------------------------------------
+   Path building
+   ------------------------------------------------------------------ */
+
+function pathContains(row, col) {
+  for (let i = 0; i < game.path.length; i++) {
+    if (game.path[i].row === row && game.path[i].col === col) return i;
+  }
+  return -1;
+}
+
+function areNeighbours(a, b) {
+  const dr = Math.abs(a.row - b.row);
+  const dc = Math.abs(a.col - b.col);
+  return dr <= 1 && dc <= 1 && (dr + dc) > 0;
+}
+
+/* A prism gem slots into a link of any colour. */
+function cellMatchesPath(cell) {
+  if (cell.kind !== "gem") return false;
+  if (cell.special === "prism") return true;
+  if (game.pathColour === -1) return true;
+  return cell.colour === game.pathColour;
+}
+
+/* A ring of linked gems only counts as a loop if it has at least one
+   cell trapped inside it. Flooding in from the edges of the board in
+   the four compass directions cannot slip through a ring that links
+   diagonally, so any cell the flood never reaches is walled in.
+
+   The trapped cells are what the loop's extra effects fire on, so the
+   flood returns them. Whether a loop closed at all is just whether
+   that list came back empty. */
+function cellsInsideLoop() {
+  const isWall = [];
+  const reached = [];
+  for (let row = 0; row < ROWS; row++) {
+    const wallLine = [];
+    const reachedLine = [];
+    for (let col = 0; col < COLS; col++) {
+      wallLine.push(false);
+      reachedLine.push(false);
+    }
+    isWall.push(wallLine);
+    reached.push(reachedLine);
+  }
+
+  for (let i = 0; i < game.path.length; i++) {
+    const spot = game.path[i];
+    isWall[spot.row][spot.col] = true;
+  }
+
+  /* Every open cell on the rim of the board seeds the flood. */
+  const pending = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const onRim = row === 0 || col === 0 || row === ROWS - 1 || col === COLS - 1;
+      if (onRim === false) continue;
+      if (isWall[row][col] === true) continue;
+      if (reached[row][col] === true) continue;
+      reached[row][col] = true;
+      pending.push({ row: row, col: col });
+    }
+  }
+
+  const steps = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  while (pending.length > 0) {
+    const spot = pending.pop();
+    for (let s = 0; s < steps.length; s++) {
+      const row = spot.row + steps[s][0];
+      const col = spot.col + steps[s][1];
+      if (insideBoard(row, col) === false) continue;
+      if (isWall[row][col] === true) continue;
+      if (reached[row][col] === true) continue;
+      reached[row][col] = true;
+      pending.push({ row: row, col: col });
+    }
+  }
+
+  const inside = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (isWall[row][col] === true) continue;
+      if (reached[row][col] === true) continue;
+      inside.push({ row: row, col: col });
+    }
+  }
+
+  return inside;
+}
+
+function loopEnclosesACell() {
+  return cellsInsideLoop().length > 0;
+}
+
+/* What a closed loop has trapped. Each list drives one of the extra
+   effects, and the same summary paints the preview while the loop is
+   still being held. */
+function loopInteriorSummary() {
+  const inside = cellsInsideLoop();
+  const summary = {
+    cells: inside,
+    bombs: [],
+    prisms: [],
+    stones: [],
+    blighted: []
+  };
+
+  for (let i = 0; i < inside.length; i++) {
+    const spot = inside[i];
+    const cell = cellAt(spot.row, spot.col);
+
+    if (cell.kind === "stone") {
+      summary.stones.push(spot);
+      continue;
+    }
+    if (cell.kind !== "gem") continue;
+
+    if (cell.special === "bomb") summary.bombs.push(spot);
+    if (cell.special === "prism") summary.prisms.push(spot);
+    if (cell.blighted === true) summary.blighted.push(spot);
+  }
+
+  return summary;
+}
+
+function loopCaughtSomething(summary) {
+  if (summary.bombs.length > 0) return true;
+  if (summary.prisms.length > 0) return true;
+  if (summary.stones.length > 0) return true;
+  if (summary.blighted.length > 0) return true;
+  return false;
+}
+
+/* The middle of the ring, in fractional cell coordinates. Effects that
+   sweep the board start here. */
+function loopCentreCell(summary) {
+  let rowTotal = 0;
+  let colTotal = 0;
+
+  for (let i = 0; i < summary.cells.length; i++) {
+    rowTotal += summary.cells[i].row;
+    colTotal += summary.cells[i].col;
+  }
+
+  return {
+    row: rowTotal / summary.cells.length,
+    col: colTotal / summary.cells.length
+  };
+}
+
+/* One toast line for the loop, so the loudest catch names itself. The
+   marks drawn on the board show the rest. */
+function loopCatchLabel(summary) {
+  if (summary.prisms.length > 0) return "LOOP + PRISM";
+  if (summary.bombs.length > 0) return "LOOP + BOMB";
+  if (summary.stones.length > 0) return "LOOP + STONE";
+  if (summary.blighted.length > 0) return "LOOP + BLIGHT";
+  return "LOOP!";
+}
+
+function beginPath(row, col) {
+  const cell = cellAt(row, col);
+  if (cell.kind !== "gem") return;
+  if (cell.doomed === true) return;
+
+  game.path = [{ row: row, col: col }];
+  game.loopClosed = false;
+
+  if (cell.special === "prism") {
+    game.pathColour = -1;
+  } else {
+    game.pathColour = cell.colour;
+  }
+
+  playLinkNote(0);
+}
+
+function extendPath(row, col) {
+  if (game.path.length === 0) return;
+  if (game.loopClosed === true) return;
+
+  const head = game.path[game.path.length - 1];
+  if (head.row === row && head.col === col) return;
+
+  const candidate = { row: row, col: col };
+  if (areNeighbours(head, candidate) === false) return;
+
+  /* Stepping back onto the previous cell undoes the last link. */
+  if (game.path.length >= 2) {
+    const previous = game.path[game.path.length - 2];
+    if (previous.row === row && previous.col === col) {
+      game.path.pop();
+      if (game.path.length === 1) {
+        const first = cellAt(game.path[0].row, game.path[0].col);
+        game.pathColour = first.special === "prism" ? -1 : first.colour;
+      }
+      playTone(220, 0.08, "sine", 0.08);
+      return;
+    }
+  }
+
+  const cell = cellAt(row, col);
+  if (cellMatchesPath(cell) === false) return;
+
+  /* Only coming back to the gem the link started on closes a loop, and
+     only when the ring it makes has something inside it. Brushing the
+     middle of your own trail does nothing at all. */
+  const existingIndex = pathContains(row, col);
+  if (existingIndex !== -1) {
+    if (existingIndex === 0 && game.pathColour !== -1 && loopEnclosesACell() === true) {
+      game.loopClosed = true;
+      game.shake = Math.max(game.shake, 7);
+      playTone(140, 0.5, "sawtooth", 0.16);
+      playTone(560, 0.5, "sine", 0.12);
+
+      /* Anything trapped in the middle is about to go off far harder
+         than linking it would have, so the player is told before they
+         let go, while they can still change their mind. */
+      const summary = loopInteriorSummary();
+      if (loopCaughtSomething(summary) === true) {
+        game.shake = Math.max(game.shake, 10);
+        playLoopArmed();
+        showBurstToast(loopCatchLabel(summary), "#ffffff");
+      } else {
+        showBurstToast("LOOP!", GEM_COLOURS[game.pathColour].core);
+      }
+    }
+    return;
+  }
+
+  /* The first non-prism gem fixes the colour of the whole link. */
+  if (game.pathColour === -1 && cell.special !== "prism") {
+    game.pathColour = cell.colour;
+  }
+
+  game.path.push(candidate);
+  playLinkNote(Math.min(game.path.length - 1, 16));
+}
+
+/* ------------------------------------------------------------------
+   Resolving a completed link
+   ------------------------------------------------------------------ */
+
+function keyOf(row, col) {
+  return row * COLS + col;
+}
+
+function addToClearSet(set, row, col) {
+  if (insideBoard(row, col) === false) return;
+  const cell = cellAt(row, col);
+  if (cell.kind !== "gem") return;
+  set.set(keyOf(row, col), { row: row, col: col });
+}
+
+/* Bombs inside the clear set detonate, and their blast can wake other
+   bombs, so the set is expanded until nothing new joins. */
+/* Expands a clear set to include everything caught in the blast of any
+   bomb inside it, waking further bombs as it goes. Returns how much
+   damage each stone took, since a bomb cracks stones directly and two
+   overlapping blasts crack the same stone twice.
+
+   tripleKeys holds the bombs a closed loop caught in the middle of it.
+   Those reach three cells instead of one and hit stones for three. A
+   triple blast that wakes another trapped bomb passes the reach on,
+   because the key is looked up once per bomb. */
+function expandBombs(set, tripleKeys) {
+  const pending = [];
+  set.forEach(function (spot) { pending.push(spot); });
+
+  const detonated = new Set();
+  const stoneDamage = new Map();
+
+  while (pending.length > 0) {
+    const spot = pending.pop();
+    const cell = cellAt(spot.row, spot.col);
+    if (cell.kind !== "gem") continue;
+    if (cell.special !== "bomb") continue;
+
+    const bombKey = keyOf(spot.row, spot.col);
+    if (detonated.has(bombKey) === true) continue;
+    detonated.add(bombKey);
+
+    let radius = BOMB_BLAST_RADIUS;
+    let stoneHit = BOMB_STONE_DAMAGE;
+
+    if (tripleKeys.has(bombKey) === true) {
+      radius = TRIPLE_BLAST_RADIUS;
+      stoneHit = TRIPLE_STONE_DAMAGE;
+
+      spawnTripleExplosion(spot.row, spot.col);
+      game.shake = Math.max(game.shake, 17);
+      playTripleBlast();
+    } else {
+      spawnExplosion(spot.row, spot.col);
+      game.shake = Math.max(game.shake, 9);
+      playNoiseHit(0.28);
+    }
+
+    for (let dr = -radius; dr <= radius; dr++) {
+      for (let dc = -radius; dc <= radius; dc++) {
+        const row = spot.row + dr;
+        const col = spot.col + dc;
+        if (insideBoard(row, col) === false) continue;
+
+        const neighbour = cellAt(row, col);
+
+        if (neighbour.kind === "stone") {
+          const stoneKey = keyOf(row, col);
+          const sofar = stoneDamage.has(stoneKey) ? stoneDamage.get(stoneKey) : 0;
+          stoneDamage.set(stoneKey, sofar + stoneHit);
+          continue;
+        }
+
+        if (neighbour.kind !== "gem") continue;
+
+        const key = keyOf(row, col);
+        if (set.has(key) === true) continue;
+
+        set.set(key, { row: row, col: col });
+        pending.push({ row: row, col: col });
+      }
+    }
+  }
+
+  return stoneDamage;
+}
+
+function everyCellOfColour(set, colour) {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind === "gem" && cell.colour === colour) {
+        set.set(keyOf(row, col), { row: row, col: col });
+      }
+    }
+  }
+}
+
+function everyGemOnBoard(set) {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (cellAt(row, col).kind === "gem") {
+        set.set(keyOf(row, col), { row: row, col: col });
+      }
+    }
+  }
+}
+
+function everyBlightedGem(set) {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind === "gem" && cell.blighted === true) {
+        set.set(keyOf(row, col), { row: row, col: col });
+      }
+    }
+  }
+}
+
+/* Enough damage to finish every stone standing, whatever it has left. */
+function everyStoneOnBoard(damage) {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind === "stone") {
+        damage.set(keyOf(row, col), cell.hp);
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------
+   What a closed loop does to whatever it caught in the middle
+
+   Linking a special is one thing. Drawing a ring around one and never
+   touching it is another, and it pays far better: the special never
+   joins the link, so this is the only place it goes off.
+   ------------------------------------------------------------------ */
+
+function applyLoopInteriorEffects(summary, clearSet, tripleKeys, stoneShatter) {
+  const centre = loopCentreCell(summary);
+  const middle = cellCentre(centre.row, centre.col);
+  const reach = Math.max(layout.width, layout.height) * 1.1;
+
+  /* A trapped bomb has to be seeded into the clear set by hand. It is
+     usually the wrong colour for the sweep, and expandBombs only wakes
+     bombs that are already in the set. */
+  for (let i = 0; i < summary.bombs.length; i++) {
+    const spot = summary.bombs[i];
+    addToClearSet(clearSet, spot.row, spot.col);
+    tripleKeys.add(keyOf(spot.row, spot.col));
+  }
+  if (summary.bombs.length > 0) {
+    showBurstToast("TRIPLE BLAST", "#ffd47a");
+  }
+
+  /* Whether the clear rolls out from the middle of the ring. A blast
+     is instant, so a lone bomb does not get a wave. */
+  let sweeps = false;
+
+  if (summary.stones.length > 0) {
+    everyStoneOnBoard(stoneShatter);
+    sweeps = true;
+    game.shake = Math.max(game.shake, 14);
+    playStonesShatter();
+    showBurstToast("STONES SHATTERED", "#cfc7e6");
+    spawnShockwave(middle.x, middle.y, "#9a92b5", reach, 0.65, layout.cell * 0.34, 0);
+  }
+
+  if (summary.blighted.length > 0) {
+    everyBlightedGem(clearSet);
+    sweeps = true;
+    game.shake = Math.max(game.shake, 12);
+    playBlightPurge();
+    showBurstToast("BLIGHT PURGED", "#45e08a");
+    spawnShockwave(middle.x, middle.y, "#b04dff", reach, 0.6, layout.cell * 0.3, 0);
+    spawnShockwave(middle.x, middle.y, "#45e08a", reach, 0.7, layout.cell * 0.22, 0.12);
+  }
+
+  /* The big one. Every gem on the board, and the rings that sell it. */
+  if (summary.prisms.length > 0) {
+    everyGemOnBoard(clearSet);
+    sweeps = true;
+    game.shake = Math.max(game.shake, 22);
+    playPrismNova();
+    showBurstToast("PRISM NOVA", "#ffffff");
+    startScreenFlash("#ffffff", 0.5);
+
+    spawnShockwave(middle.x, middle.y, "#ffffff", reach, 0.55, layout.cell * 0.5, 0);
+    for (let i = 0; i < GEM_COLOURS.length; i++) {
+      const colour = GEM_COLOURS[i].core;
+      spawnShockwave(middle.x, middle.y, colour, reach, 0.75, layout.cell * 0.34, 0.07 + i * 0.06);
+    }
+    spawnNovaSparks(centre.row, centre.col);
+  }
+
+  if (sweeps === false) return null;
+  return centre;
+}
+
+function resolvePath() {
+  if (game.path.length < MIN_LINK) {
+    game.path = [];
+    game.pathColour = -1;
+    game.loopClosed = false;
+    return;
+  }
+
+  const linkLength = game.path.length;
+  const clearSet = new Map();
+
+  /* The last gem of a long link survives and gets upgraded. */
+  let upgradeSpot = null;
+  let upgradeKind = "none";
+
+  if (game.loopClosed === false && linkLength >= BOMB_LINK) {
+    upgradeSpot = game.path[linkLength - 1];
+    upgradeKind = linkLength >= PRISM_LINK ? "prism" : "bomb";
+  }
+
+  for (let i = 0; i < game.path.length; i++) {
+    const spot = game.path[i];
+    if (upgradeSpot !== null && spot.row === upgradeSpot.row && spot.col === upgradeSpot.col) {
+      continue;
+    }
+    addToClearSet(clearSet, spot.row, spot.col);
+  }
+
+  /* Loop closed: sweep the whole colour off the board, then set off
+     anything the ring caught in the middle of it. */
+  const tripleBombKeys = new Set();
+  const stoneShatter = new Map();
+  let waveCentre = null;
+
+  if (game.loopClosed === true && game.pathColour !== -1) {
+    everyCellOfColour(clearSet, game.pathColour);
+
+    const summary = loopInteriorSummary();
+    if (loopCaughtSomething(summary) === true) {
+      waveCentre = applyLoopInteriorEffects(summary, clearSet, tripleBombKeys, stoneShatter);
+    }
+  }
+
+  /* A prism caught in the link torches its colour as well. */
+  let prismInLink = false;
+  for (let i = 0; i < game.path.length; i++) {
+    const spot = game.path[i];
+    if (cellAt(spot.row, spot.col).special === "prism") {
+      prismInLink = true;
+    }
+  }
+  if (prismInLink === true && game.pathColour !== -1) {
+    everyCellOfColour(clearSet, game.pathColour);
+    showBurstToast("PRISM BLAST", "#ffffff");
+    playTone(880, 0.5, "sine", 0.15);
+  }
+
+  const bombStoneDamage = expandBombs(clearSet, tripleBombKeys);
+
+  /* Stones the loop shattered take their damage on top of whatever a
+     blast already did to them. */
+  stoneShatter.forEach(function (amount, key) {
+    const sofar = bombStoneDamage.has(key) ? bombStoneDamage.get(key) : 0;
+    bombStoneDamage.set(key, sofar + amount);
+  });
+
+  /* The gem being upgraded must survive its own blast radius. */
+  if (upgradeSpot !== null) {
+    clearSet.delete(keyOf(upgradeSpot.row, upgradeSpot.col));
+  }
+
+  game.moves--;
+  applyClear(clearSet, linkLength, bombStoneDamage, waveCentre);
+
+  if (upgradeSpot !== null) {
+    forgeSpecial(upgradeSpot.row, upgradeSpot.col, upgradeKind);
+  }
+
+  game.path = [];
+  game.pathColour = -1;
+  game.loopClosed = false;
+
+  advanceBlight();
+  refreshHud();
+}
+
+/* Upgrade a gem in place. This happens while the burst is still
+   playing, so the new special is already on the board by the time
+   gravity runs. */
+function forgeSpecial(row, col, special) {
+  const cell = cellAt(row, col);
+  if (cell.kind !== "gem") return;
+
+  cell.special = special;
+  cell.blighted = false;
+  cell.scale = 1.6;
+  spawnForgeRing(row, col);
+
+  if (special === "prism") {
+    showBurstToast("PRISM FORGED", "#ffffff");
+    playTone(1046, 0.4, "sine", 0.16);
+  } else {
+    showBurstToast("BOMB FORGED", "#ffab35");
+    playTone(160, 0.35, "square", 0.13);
+  }
+}
+
+/* How long a cell waits before it bursts. Everything goes at once for
+   an ordinary break. A loop that sweeps the board passes the middle of
+   its ring as the centre, and the burst rolls out from there. */
+function burstDelayFor(waveCentre, row, col) {
+  if (waveCentre === null) return 0;
+
+  const rowGap = row - waveCentre.row;
+  const colGap = col - waveCentre.col;
+  const distance = Math.sqrt(rowGap * rowGap + colGap * colGap);
+
+  return distance * WAVE_SECONDS_PER_CELL;
+}
+
+/* Turn a set of doomed cells into score, particles, stone damage and
+   goal progress, then hand over to the burst animation. */
+function applyClear(clearSet, linkLength, bombStoneDamage, waveCentre) {
+  const cleared = [];
+  clearSet.forEach(function (spot) { cleared.push(spot); });
+
+  if (cleared.length === 0) return;
+
+  /* Nine shards a gem is right for a link. Board wide, it is upwards of
+     five hundred particles on a phone, so the spray thins out as the
+     clear grows and the shockwave rings carry the moment. */
+  let shardsPerGem = 9;
+  if (cleared.length > 24) shardsPerGem = 5;
+  if (cleared.length > 40) shardsPerGem = 4;
+
+  /* The burst cannot end before the last cell in the wave has popped. */
+  let longestDelay = 0;
+
+  /* What the player committed, which is not always what clears. A five
+     link forges a bomb and that gem stays on the board, so cleared is
+     four. Taking whichever is larger counts the link the player drew
+     and still catches bomb blasts, loop sweeps and prism blasts, where
+     far more goes than was ever linked. */
+  const gemsCommitted = Math.max(cleared.length, linkLength);
+
+  const milestone = showMilestoneWord(gemsCommitted);
+  if (milestone !== null) {
+    playMilestoneChime(MILESTONES.indexOf(milestone));
+  }
+
+  /* Stones take one crack for being beside a burst, plus one for every
+     bomb blast that covered them, so bombs are the real stone tool. */
+  const stoneDamage = new Map();
+  bombStoneDamage.forEach(function (amount, key) {
+    stoneDamage.set(key, amount);
+  });
+
+  let curedCount = 0;
+  let colourGoalHits = 0;
+  let gained = 0;
+  const adjacentToBurst = new Set();
+
+  for (let i = 0; i < cleared.length; i++) {
+    const spot = cleared[i];
+    const cell = cellAt(spot.row, spot.col);
+
+    /* Score climbs with the size of the burst. */
+    const stepBonus = Math.floor(i / 3) * 5;
+    let value = 20 + stepBonus;
+
+    if (cell.blighted === true) {
+      value += 25;
+      curedCount++;
+    }
+    gained += value;
+
+    if (game.goal.kind === "colour" && cell.colour === game.goal.colour) {
+      colourGoalHits++;
+    }
+
+    const delay = burstDelayFor(waveCentre, spot.row, spot.col);
+    if (delay > longestDelay) longestDelay = delay;
+
+    spawnBurstParticles(spot.row, spot.col, cell, shardsPerGem, delay);
+    cell.doomed = true;
+    cell.dying = BURST_SECONDS;
+    cell.dyingMax = BURST_SECONDS;
+    cell.dyingDelay = delay;
+
+    /* Stones crack when something bursts beside them. */
+    const steps = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+    for (let s = 0; s < steps.length; s++) {
+      const row = spot.row + steps[s][0];
+      const col = spot.col + steps[s][1];
+      if (insideBoard(row, col) === false) continue;
+      if (cellAt(row, col).kind !== "stone") continue;
+      adjacentToBurst.add(keyOf(row, col));
+    }
+  }
+
+  adjacentToBurst.forEach(function (key) {
+    const sofar = stoneDamage.has(key) ? stoneDamage.get(key) : 0;
+    stoneDamage.set(key, sofar + 1);
+  });
+
+  /* Big bursts are worth a multiplier. */
+  let multiplier = 1;
+  if (cleared.length >= 6) multiplier = 1.5;
+  if (cleared.length >= 10) multiplier = 2;
+  if (cleared.length >= 16) multiplier = 3;
+
+  const total = Math.round(gained * multiplier);
+  game.score += total;
+
+  if (game.goal.kind === "score") {
+    game.goal.progress += total;
+  }
+  if (game.goal.kind === "colour") {
+    game.goal.progress += colourGoalHits;
+  }
+
+  const centre = cleared[Math.floor(cleared.length / 2)];
+  const colourForText = game.pathColour === -1 ? 4 : game.pathColour;
+  spawnFloater(centre.row, centre.col, "+" + total, GEM_COLOURS[colourForText].rim);
+
+  if (multiplier > 1) {
+    spawnFloater(centre.row - 1, centre.col, "x" + multiplier, "#ffffff");
+  }
+  if (curedCount > 0) {
+    showBurstToast("CURED x" + curedCount, "#45e08a");
+  }
+
+  /* Apply stone damage. */
+  stoneDamage.forEach(function (amount, key) {
+    const row = Math.floor(key / COLS);
+    const col = key % COLS;
+    const stone = cellAt(row, col);
+    if (stone.kind !== "stone") return;
+    if (stone.doomed === true) return;
+
+    stone.hp -= amount;
+    game.shake = Math.max(game.shake, 3);
+    playNoiseHit(0.12);
+
+    if (stone.hp <= 0) {
+      const delay = burstDelayFor(waveCentre, row, col);
+      if (delay > longestDelay) longestDelay = delay;
+
+      stone.doomed = true;
+      stone.dying = BURST_SECONDS;
+      stone.dyingMax = BURST_SECONDS;
+      stone.dyingDelay = delay;
+      spawnStoneDebris(row, col, delay);
+      game.score += 60;
+      if (game.goal.kind === "stone") {
+        game.goal.progress++;
+      }
+      if (game.goal.kind === "score") {
+        game.goal.progress += 60;
+      }
+      spawnFloater(row, col, "+60", "#d8d2e8");
+    }
+  });
+
+  game.charge = Math.min(CHARGE_MAX, game.charge + cleared.length);
+  game.shake = Math.max(game.shake, Math.min(12, 2 + cleared.length * 0.5));
+  playShatter(gemsCommitted);
+
+  game.phase = "bursting";
+  game.burstTimer = BURST_SECONDS + longestDelay;
+  refreshHud();
+}
+
+/* ------------------------------------------------------------------
+   Prism charge power
+   ------------------------------------------------------------------ */
+
+function itemById(id) {
+  for (let i = 0; i < ITEMS.length; i++) {
+    if (ITEMS[i].id === id) return ITEMS[i];
+  }
+  throw new Error("no item called " + id);
+}
+
+function canAfford(id) {
+  return game.charge >= itemById(id).cost;
+}
+
+/* Tapping an item either fires it straight away or arms it and waits
+   for a tap on the board. */
+function selectItem(id) {
+  if (game.phase !== "idle") return;
+
+  const item = itemById(id);
+
+  if (game.aiming === id) {
+    game.aiming = "none";
+    refreshHud();
+    return;
+  }
+
+  if (canAfford(id) === false) {
+    showToast("NEEDS " + item.cost + " CHARGE", "#ff5470");
+    playTone(160, 0.16, "square", 0.1);
+    return;
+  }
+
+  if (item.aims === true) {
+    game.aiming = id;
+    refreshHud();
+    return;
+  }
+
+  game.aiming = "none";
+  if (id === "shuffle") fireShuffle();
+  if (id === "moves") fireExtraMoves();
+  refreshHud();
+}
+
+/* Items are paid for after they resolve, because a clear feeds the
+   meter and would otherwise hand part of the cost straight back. */
+function spendCharge(id) {
+  game.charge = Math.max(0, game.charge - itemById(id).cost);
+}
+
+function fireShuffle() {
+  const colours = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind === "gem" && cell.special === "none") colours.push(cell.colour);
+    }
+  }
+
+  for (let i = colours.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const swap = colours[i];
+    colours[i] = colours[j];
+    colours[j] = swap;
+  }
+
+  let next = 0;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind === "gem" && cell.special === "none") {
+        cell.colour = colours[next];
+        cell.scale = 1.35;
+        next++;
+      }
+    }
+  }
+
+  ensureSolvableBoard();
+  spendCharge("shuffle");
+  game.shake = Math.max(game.shake, 5);
+  showToast("SHUFFLED", "#4fd6ff");
+  playTone(520, 0.24, "triangle", 0.14);
+  saveGame();
+}
+
+function fireExtraMoves() {
+  game.moves += 2;
+  spendCharge("moves");
+  showToast("+2 MOVES", "#45e08a");
+  playTone(740, 0.3, "triangle", 0.16);
+  spawnFloater(1, Math.floor(COLS / 2), "+2", "#45e08a");
+  saveGame();
+}
+
+/* Drops a bomb onto a gem and sets it off on the spot, so the charge
+   buys a blast straight away instead of a gem to link later. */
+function firePlaceBombAt(row, col) {
+  const cell = cellAt(row, col);
+  if (cell.kind !== "gem") {
+    showToast("PICK A GEM", "#ff5470");
+    return;
+  }
+  if (cell.special !== "none") {
+    showToast("ALREADY SPECIAL", "#ff5470");
+    return;
+  }
+
+  cell.special = "bomb";
+  cell.blighted = false;
+  cell.scale = 1.6;
+  spawnForgeRing(row, col);
+  game.aiming = "none";
+
+  showToast("BOMB PLACED", "#ffab35");
+  playTone(160, 0.35, "square", 0.13);
+
+  /* expandBombs only wakes bombs that are already inside the set, so
+     the fresh bomb has to be seeded into it to go off. A bought bomb
+     always blasts at the normal reach: the triple only comes from
+     looping one. */
+  const clearSet = new Map();
+  addToClearSet(clearSet, row, col);
+  const bombStoneDamage = expandBombs(clearSet, new Set());
+
+  applyClear(clearSet, clearSet.size, bombStoneDamage, null);
+
+  spendCharge("bomb");
+  refreshHud();
+}
+
+function firePurgeAt(row, col) {
+  const cell = cellAt(row, col);
+  if (cell.kind !== "gem") {
+    showToast("PICK A GEM", "#ff5470");
+    return;
+  }
+
+  const clearSet = new Map();
+  everyCellOfColour(clearSet, cell.colour);
+  const bombStoneDamage = expandBombs(clearSet, new Set());
+
+  game.pathColour = cell.colour;
+  game.aiming = "none";
+
+  showToast(GEM_COLOURS[cell.colour].name.toUpperCase() + " PURGED", GEM_COLOURS[cell.colour].core);
+  playTone(660, 0.55, "sine", 0.16);
+  playNoiseHit(0.22);
+
+  applyClear(clearSet, clearSet.size, bombStoneDamage, null);
+
+  spendCharge("purge");
+  game.pathColour = -1;
+  refreshHud();
+}
+
+/* Routes a tap on the board to whichever item is armed. */
+function fireArmedItemAt(row, col) {
+  if (game.aiming === "bomb") { firePlaceBombAt(row, col); return; }
+  if (game.aiming === "purge") { firePurgeAt(row, col); return; }
+  throw new Error("nothing armed to fire at " + row + "," + col);
+}
+
+/* ------------------------------------------------------------------
+   Gravity and refill
+   ------------------------------------------------------------------ */
+
+function removeDeadCells() {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.doomed === true) {
+        game.board[row][col] = null;
+      }
+    }
+  }
+}
+
+function applyGravity() {
+  for (let col = 0; col < COLS; col++) {
+    let writeRow = ROWS - 1;
+
+    for (let row = ROWS - 1; row >= 0; row--) {
+      const cell = game.board[row][col];
+      if (cell === null) continue;
+
+      if (writeRow !== row) {
+        game.board[writeRow][col] = cell;
+        game.board[row][col] = null;
+        cell.offsetY = -(writeRow - row) * layout.cell;
+        cell.fallSpeed = 0;
+      }
+      writeRow--;
+    }
+
+    /* Rows 0 through writeRow are now empty. The replacements come in
+       as a stack sitting just above the board, so they all travel the
+       same distance and arrive together. */
+    const dropDistance = (writeRow + 1) * layout.cell;
+    for (let row = writeRow; row >= 0; row--) {
+      const gem = makeGem(randomColour());
+      gem.scale = 1;
+      gem.offsetY = -dropDistance;
+      gem.fallSpeed = 0;
+      game.board[row][col] = gem;
+    }
+  }
+}
+
+function boardIsSettled() {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (cellAt(row, col).offsetY < -0.5) return false;
+    }
+  }
+  return true;
+}
+
+/* ------------------------------------------------------------------
+   Solvability check
+   ------------------------------------------------------------------ */
+
+function hasAnyLink() {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind !== "gem") continue;
+      if (cell.special === "prism") return true;
+
+      let sameNeighbours = 0;
+      for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+          if (dr === 0 && dc === 0) continue;
+          const r = row + dr;
+          const c = col + dc;
+          if (insideBoard(r, c) === false) continue;
+          const other = cellAt(r, c);
+          if (other.kind === "gem" && other.colour === cell.colour) {
+            sameNeighbours++;
+          }
+        }
+      }
+      if (sameNeighbours >= 2) return true;
+    }
+  }
+  return false;
+}
+
+function ensureSolvableBoard() {
+  let attempts = 0;
+  while (hasAnyLink() === false && attempts < 30) {
+    attempts++;
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        const cell = cellAt(row, col);
+        if (cell.kind === "gem") {
+          cell.colour = randomColour();
+        }
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------
+   End of level and end of run
+   ------------------------------------------------------------------ */
+
+function goalIsMet() {
+  return game.goal.progress >= game.goal.target;
+}
+
+function nextLevelWarning(level) {
+  if (level === 3) return "The Blight starts creeping in from here.";
+  if (level === 4) return "Stones and blight together now.";
+  if (level === 6) return "The Blight spreads faster.";
+  if (level === 10) return "The Blight spreads every other move.";
+  if (level % 4 === 2) return "One more move from here on.";
+  if (level % 12 === 0) return "Stones are tougher from here.";
+  return "Tougher goal ahead.";
+}
+
+function checkLevelState() {
+  if (countBlight() >= blightLossThreshold()) {
+    failLevel("The Blight Wins", "It swallowed the board.");
+    return;
+  }
+
+  if (goalIsMet() === true) {
+    completeLevel();
+    return;
+  }
+
+  if (game.moves <= 0) {
+    failLevel("Out of Moves", "The board held out this time.");
+    return;
+  }
+
+  ensureSolvableBoard();
+  game.phase = "idle";
+  refreshHud();
+}
+
+function completeLevel() {
+  const leftoverBonus = game.moves * 40;
+  game.score += leftoverBonus;
+  game.phase = "levelDone";
+
+  /* Continues bank up, so a clean run arrives at the deep levels with
+     a stack of them. */
+  let earned = 0;
+  if (game.level % CONTINUE_EVERY_LEVELS === 0) {
+    earned = 1;
+    game.continues++;
+  }
+
+  game.blightCarry = countBlight();
+  playFanfare();
+
+  let body =
+    "<div class='rule'><span class='pip'>&#9733;</span><span>Leftover move bonus: <b>+" + leftoverBonus + "</b></span></div>" +
+    "<div class='rule'><span class='pip'>&#9670;</span><span>Total score: <b>" + game.score + "</b></span></div>";
+
+  if (earned > 0) {
+    body += "<div class='rule'><span class='pip'>&#10010;</span><span>Continue earned. You now hold <b>" + game.continues + "</b>.</span></div>";
+  }
+  if (game.blightCarry > 0) {
+    body += "<div class='rule'><span class='pip'>&#9760;</span><span><b>" + game.blightCarry + "</b> blight follows you to the next level.</span></div>";
+  }
+  body += "<div class='rule'><span class='pip'>&#9888;</span><span>" + nextLevelWarning(game.level + 1) + "</span></div>";
+
+  showCard(
+    "Level " + game.level + " Clear",
+    "Goal met with " + game.moves + " moves to spare.",
+    body,
+    "Level " + (game.level + 1),
+    function () {
+      game.level++;
+      startLevel();
+      hideCard();
+    }
+  );
+}
+
+/* A failed level offers a continue while you still hold one. Taking it
+   rewinds your score to what it was when the level began, so failing
+   can never inflate a high score. */
+function failLevel(title, subtitle) {
+  game.phase = "over";
+  playFailure();
+
+  const lostScore = game.score - game.scoreAtLevelStart;
+
+  if (game.continues > 0) {
+    let body =
+      "<div class='rule'><span class='pip'>&#10010;</span><span>Continues left: <b>" + game.continues + "</b></span></div>" +
+      "<div class='rule'><span class='pip'>&#9670;</span><span>Retrying level " + game.level + " costs the <b>" + lostScore + "</b> points you scored on it.</span></div>" +
+      "<div class='rule'><span class='pip'>&#9733;</span><span>Score you keep: <b>" + game.scoreAtLevelStart + "</b></span></div>";
+
+    showCard(
+      title,
+      subtitle,
+      body,
+      "Continue (" + game.continues + " left)",
+      function () {
+        game.continues--;
+        game.score = game.scoreAtLevelStart;
+        game.charge = 0;
+        game.blightCarry = 0;
+        startLevel();
+        hideCard();
+      },
+      "Give Up",
+      function () {
+        endRun(title, subtitle);
+      }
+    );
+
+    saveGame();
+    return;
+  }
+
+  endRun(title, subtitle);
+}
+
+function endRun(title, subtitle) {
+  game.phase = "over";
+  stopMusic();
+
+  if (game.score > game.bestScore) {
+    game.bestScore = game.score;
+    saveBest(game.bestScore);
+  }
+
+  clearSave();
+
+  finalScoreEl.textContent = String(game.score);
+  bestScoreEl.textContent = String(game.bestScore);
+  cardStats.style.display = "flex";
+
+  showCard(
+    title,
+    "Run over. " + subtitle,
+    "<div class='rule'><span class='pip'>&#9670;</span><span>You reached <b>level " + game.level + "</b>.</span></div>" +
+    "<div class='rule'><span class='pip'>&#9733;</span><span>Close a loop to wipe a whole colour when the board gets crowded.</span></div>",
+    "Play Again",
+    function () {
+      cardStats.style.display = "none";
+      startRun();
+      hideCard();
+    }
+  );
+}
+
+/* ------------------------------------------------------------------
+   Saved games
+
+   The save is rewritten at the start of every level, on every continue
+   and when the run ends, so it always matches where the player really
+   is. That keeps a reload from being a free continue.
+   ------------------------------------------------------------------ */
+
+function serialiseBoard() {
+  const out = [];
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      out.push({
+        k: cell.kind === "stone" ? 1 : 0,
+        c: cell.colour,
+        s: cell.special,
+        b: cell.blighted === true ? 1 : 0,
+        h: cell.hp,
+        m: cell.kind === "stone" ? cell.maxHp : 0
+      });
+    }
+  }
+  return out;
+}
+
+function restoreBoard(flat) {
+  game.board = [];
+  let index = 0;
+
+  for (let row = 0; row < ROWS; row++) {
+    const line = [];
+    for (let col = 0; col < COLS; col++) {
+      const saved = flat[index];
+      index++;
+
+      let cell;
+      if (saved.k === 1) {
+        cell = makeStone(saved.m);
+        cell.hp = saved.h;
+      } else {
+        cell = makeGem(saved.c);
+        cell.special = saved.s;
+      }
+      cell.blighted = saved.b === 1;
+      cell.scale = 1;
+      line.push(cell);
+    }
+    game.board.push(line);
+  }
+}
+
+/* A browser can refuse storage outright. An iPhone opening this file
+   straight off the device is the case that bit us: the page counts as
+   having no origin, so localStorage, sessionStorage, IndexedDB and
+   cookies are all refused. There is no other place to put a save, so
+   this cannot be worked around in here. It is asked once, up front,
+   and the answer is said out loud in the console and printed on the
+   title card, so a run that will not be remembered says so before the
+   player spends an hour on it. */
+const storageWorks = (function () {
+  const probeKey = "prismPathProbe";
+  try {
+    window.localStorage.setItem(probeKey, "1");
+    window.localStorage.removeItem(probeKey);
+    return true;
+  } catch (refusedByBrowser) {
+    console.error("Prism Path cannot save: this browser refused local storage. Nothing will be remembered between sessions.", refusedByBrowser);
+    return false;
+  }
+})();
+
+function saveGame() {
+  if (boardReady === false) return;
+  if (storageWorks === false) return;
+
+  const payload = {
+    version: 1,
+    rows: ROWS,
+    cols: COLS,
+    level: game.level,
+    score: game.score,
+    scoreAtLevelStart: game.scoreAtLevelStart,
+    moves: game.moves,
+    charge: game.charge,
+    continues: game.continues,
+    blightCarry: game.blightCarry,
+    movesSinceBlight: game.movesSinceBlight,
+    goal: game.goal,
+    board: serialiseBoard()
+  };
+
+  window.localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
+}
+
+function readSave() {
+  if (storageWorks === false) return null;
+
+  const raw = window.localStorage.getItem(SAVE_KEY);
+  if (raw === null) return null;
+
+  const payload = JSON.parse(raw);
+  if (payload.version !== 1) return null;
+
+  /* A save made on a differently shaped board cannot be restored onto
+     this one, so it is treated as absent. */
+  if (payload.rows !== ROWS || payload.cols !== COLS) return null;
+
+  return payload;
+}
+
+function loadGame(payload) {
+  game.level = payload.level;
+  game.score = payload.score;
+  game.scoreAtLevelStart = payload.scoreAtLevelStart;
+  game.moves = payload.moves;
+  game.charge = payload.charge;
+  game.continues = payload.continues;
+  game.blightCarry = payload.blightCarry;
+  game.movesSinceBlight = payload.movesSinceBlight;
+  game.goal = payload.goal;
+  game.path = [];
+  game.pathColour = -1;
+  game.loopClosed = false;
+  game.aiming = "none";
+  particles.length = 0;
+  floaters.length = 0;
+
+  restoreBoard(payload.board);
+
+  game.phase = "idle";
+  setMusicForLevel(game.level);
+  refreshHud();
+}
+
+function clearSave() {
+  if (storageWorks === false) return;
+
+  window.localStorage.removeItem(SAVE_KEY);
+}
+
+function hasSave() {
+  if (storageWorks === false) return false;
+
+  return window.localStorage.getItem(SAVE_KEY) !== null;
+}
+
+function saveBest(value) {
+  if (storageWorks === false) return;
+
+  window.localStorage.setItem(BEST_KEY, String(value));
+}
+
+function loadBest() {
+  if (storageWorks === false) return 0;
+
+  const raw = window.localStorage.getItem(BEST_KEY);
+  if (raw === null) return 0;
+
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed) === true) return 0;
+  return parsed;
+}
+
+/* Audio settings are kept apart from the run on purpose. Quitting a
+   run, wiping a save or losing everything on a game over must not put
+   the player's volumes back where they started. */
+function saveAudioSettings() {
+  if (storageWorks === false) return;
+
+  const payload = {
+    version: 1,
+    sfxEnabled: sound.enabled,
+    sfxVolume: sound.volume,
+    musicEnabled: music.enabled,
+    musicVolume: music.volume
+  };
+
+  window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
+}
+
+/* Reads what was stored onto the two audio objects. A first run has
+   nothing stored, which is not a failure: the values written into
+   those objects stand, and get saved the first time one is changed.
+
+   A payload under a version this build does not know is treated as
+   absent, the same way an old save is. A payload under a version it
+   does know is expected to hold the right shape, and is not quietly
+   patched up when it does not. */
+function loadAudioSettings() {
+  if (storageWorks === false) return;
+
+  const raw = window.localStorage.getItem(SETTINGS_KEY);
+  if (raw === null) return;
+
+  const payload = JSON.parse(raw);
+  if (payload.version !== 1) return;
+
+  sound.enabled = storedSwitch(payload.sfxEnabled, "sfxEnabled");
+  sound.volume = storedLevel(payload.sfxVolume, "sfxVolume");
+  music.enabled = storedSwitch(payload.musicEnabled, "musicEnabled");
+  music.volume = storedLevel(payload.musicVolume, "musicVolume");
+}
+
+function storedSwitch(value, fieldName) {
+  if (value === true) return true;
+  if (value === false) return false;
+
+  throw new Error("Prism Path: stored audio setting '" + fieldName +
+    "' should be true or false and is " + JSON.stringify(value) + ".");
+}
+
+function storedLevel(value, fieldName) {
+  if (typeof value === "number" && value >= 0 && value <= 1) return value;
+
+  throw new Error("Prism Path: stored audio setting '" + fieldName +
+    "' should be a number from 0 to 1 and is " + JSON.stringify(value) + ".");
+}
+
+/* ------------------------------------------------------------------
+   Particles and floating text
+   ------------------------------------------------------------------ */
+
+function cellCentre(row, col) {
+  return {
+    x: layout.originX + col * layout.cell + layout.cell / 2,
+    y: layout.originY + row * layout.cell + layout.cell / 2
+  };
+}
+
+/* delay holds a particle still until the wave of a board wide clear
+   reaches its cell. Everything else passes zero and fires at once. */
+function spawnBurstParticles(row, col, cell, count, delay) {
+  const centre = cellCentre(row, col);
+  const colour = cell.colour >= 0 ? GEM_COLOURS[cell.colour].core : "#8b8199";
+
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const speed = 60 + Math.random() * 150;
+    particles.push({
+      x: centre.x,
+      y: centre.y + cell.offsetY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 40,
+      life: 0.45 + Math.random() * 0.3,
+      maxLife: 0.75,
+      size: layout.cell * (0.08 + Math.random() * 0.1),
+      colour: colour,
+      gravity: 620,
+      delay: delay
+    });
+  }
+}
+
+function spawnStoneDebris(row, col, delay) {
+  const centre = cellCentre(row, col);
+  for (let i = 0; i < 12; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 80 + Math.random() * 170;
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 60,
+      life: 0.5 + Math.random() * 0.3,
+      maxLife: 0.8,
+      size: layout.cell * 0.1,
+      colour: i % 2 === 0 ? "#9a92b5" : "#5d5678",
+      gravity: 780,
+      delay: delay
+    });
+  }
+}
+
+function spawnExplosion(row, col) {
+  const centre = cellCentre(row, col);
+  for (let i = 0; i < 22; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 120 + Math.random() * 260;
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.4 + Math.random() * 0.35,
+      maxLife: 0.75,
+      size: layout.cell * (0.1 + Math.random() * 0.14),
+      colour: i % 3 === 0 ? "#ffffff" : "#ffab35",
+      gravity: 300,
+      delay: 0
+    });
+  }
+}
+
+/* A bomb that went off because a ring was drawn around it. Three cells
+   of reach in every direction, so the spray has to carry that far to
+   read as the size of what just happened. */
+function spawnTripleExplosion(row, col) {
+  const centre = cellCentre(row, col);
+
+  for (let i = 0; i < 54; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 260 + Math.random() * 520;
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.45 + Math.random() * 0.45,
+      maxLife: 0.9,
+      size: layout.cell * (0.12 + Math.random() * 0.2),
+      colour: i % 3 === 0 ? "#ffffff" : "#ffab35",
+      gravity: 260,
+      delay: 0
+    });
+  }
+
+  /* A front travelling out to the edge of what the blast reaches, so
+     the three cell radius is visible the first time you set one off. */
+  spawnShockwave(centre.x, centre.y, "#ffd47a", layout.cell * (TRIPLE_BLAST_RADIUS + 0.5), 0.42, layout.cell * 0.3, 0);
+
+  const ring = 26;
+  for (let i = 0; i < ring; i++) {
+    const angle = (Math.PI * 2 * i) / ring;
+    const speed = layout.cell * TRIPLE_BLAST_RADIUS * 2.6;
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.4,
+      maxLife: 0.4,
+      size: layout.cell * 0.11,
+      colour: "#ffd47a",
+      gravity: 0,
+      delay: 0
+    });
+  }
+}
+
+/* The prism nova throws a slow spray of every gem colour out of the
+   middle of the ring, ahead of the board emptying behind it. */
+function spawnNovaSparks(row, col) {
+  const centre = cellCentre(row, col);
+
+  for (let i = 0; i < 90; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 200 + Math.random() * 620;
+    const palette = GEM_COLOURS[i % GEM_COLOURS.length];
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0.6 + Math.random() * 0.6,
+      maxLife: 1.2,
+      size: layout.cell * (0.08 + Math.random() * 0.16),
+      colour: i % 7 === 0 ? "#ffffff" : palette.core,
+      gravity: 90,
+      delay: Math.random() * 0.18
+    });
+  }
+}
+
+function spawnBlightPuff(row, col) {
+  const centre = cellCentre(row, col);
+  for (let i = 0; i < 10; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = 25 + Math.random() * 60;
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 30,
+      life: 0.6 + Math.random() * 0.4,
+      maxLife: 1,
+      size: layout.cell * 0.14,
+      colour: "#3c1a52",
+      gravity: -30,
+      delay: 0
+    });
+  }
+}
+
+function spawnForgeRing(row, col) {
+  const centre = cellCentre(row, col);
+  for (let i = 0; i < 18; i++) {
+    const angle = (Math.PI * 2 * i) / 18;
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * 190,
+      vy: Math.sin(angle) * 190,
+      life: 0.42,
+      maxLife: 0.42,
+      size: layout.cell * 0.09,
+      colour: "#ffffff",
+      gravity: 0,
+      delay: 0
+    });
+  }
+}
+
+function spawnFloater(row, col, text, colour) {
+  const centre = cellCentre(row, col);
+  floaters.push({
+    x: centre.x,
+    y: centre.y,
+    text: text,
+    colour: colour,
+    life: 0.95,
+    maxLife: 0.95
+  });
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+
+    if (p.delay > 0) {
+      p.delay -= dt;
+      continue;
+    }
+
+    p.life -= dt;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    p.vy += p.gravity * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+  }
+
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i];
+    f.life -= dt;
+    if (f.life <= 0) {
+      floaters.splice(i, 1);
+      continue;
+    }
+    f.y -= 52 * dt;
+  }
+}
+
+/* ------------------------------------------------------------------
+   Shockwaves and screen flash
+
+   The loop effects hit the whole board at once, and a board wide spray
+   of particles reads as mush. A ring travelling out from the middle of
+   the loop is what makes the size of it legible: you can see where it
+   started and watch it arrive.
+   ------------------------------------------------------------------ */
+
+const shockwaves = [];
+let screenFlash = null;
+
+function spawnShockwave(x, y, colour, maxRadius, life, width, delay) {
+  shockwaves.push({
+    x: x,
+    y: y,
+    colour: colour,
+    maxRadius: maxRadius,
+    life: life,
+    maxLife: life,
+    width: width,
+    delay: delay
+  });
+}
+
+function startScreenFlash(colour, seconds) {
+  screenFlash = {
+    colour: colour,
+    life: seconds,
+    maxLife: seconds
+  };
+}
+
+function updateShockwaves(dt) {
+  for (let i = shockwaves.length - 1; i >= 0; i--) {
+    const wave = shockwaves[i];
+
+    if (wave.delay > 0) {
+      wave.delay -= dt;
+      continue;
+    }
+
+    wave.life -= dt;
+    if (wave.life <= 0) {
+      shockwaves.splice(i, 1);
+    }
+  }
+
+  if (screenFlash !== null) {
+    screenFlash.life -= dt;
+    if (screenFlash.life <= 0) {
+      screenFlash = null;
+    }
+  }
+}
+
+function drawShockwaves() {
+  if (shockwaves.length === 0) return;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  for (let i = 0; i < shockwaves.length; i++) {
+    const wave = shockwaves[i];
+    if (wave.delay > 0) continue;
+
+    /* Out fast, then easing off, which is how a real front behaves and
+       also keeps the ring on screen long enough to be seen. */
+    const age = 1 - wave.life / wave.maxLife;
+    const eased = 1 - Math.pow(1 - age, 3);
+    const radius = wave.maxRadius * eased;
+
+    ctx.globalAlpha = (1 - age) * 0.85;
+    ctx.strokeStyle = wave.colour;
+    ctx.lineWidth = wave.width * (1 - age * 0.65);
+    ctx.beginPath();
+    ctx.arc(wave.x, wave.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function drawScreenFlash() {
+  if (screenFlash === null) return;
+
+  const left = screenFlash.life / screenFlash.maxLife;
+
+  ctx.save();
+  ctx.globalAlpha = left * left * 0.9;
+  ctx.fillStyle = screenFlash.colour;
+  ctx.fillRect(0, 0, layout.width, layout.height);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/* ------------------------------------------------------------------
+   Toast messages
+   ------------------------------------------------------------------ */
+
+let toastTimer = 0;
+
+/* Celebration messages that fire during a burst. A milestone word owns
+   the middle of the screen while it is loud, and two messages at once
+   read as neither, so these wait their turn and the word speaks for
+   the break. Instructions and warnings still go through showToast
+   directly, because those the player has to see. */
+function showBurstToast(text, colour) {
+  if (milestoneWord !== null && milestoneWord.age < WORD_HOLD_UNTIL) return;
+  showToast(text, colour);
+}
+
+function showToast(text, colour) {
+  toast.textContent = text;
+  toast.style.color = colour;
+  toastTimer = 1.1;
+}
+
+function updateToast(dt) {
+  if (toastTimer <= 0) {
+    toast.style.opacity = "0";
+    return;
+  }
+  toastTimer -= dt;
+
+  const t = Math.max(0, toastTimer / 1.1);
+  const rise = (1 - t) * 26;
+  toast.style.opacity = String(Math.min(1, t * 2.2));
+  toast.style.transform = "translate(-50%, " + (-rise) + "px) scale(" + (0.9 + t * 0.25) + ")";
+}
+
+/* ---- MILESTONE WORDS: BEGIN ---- */
+
+/* Bubble letters, built the way the approved mockup builds them: one
+   heavy face drawn five times over, each pass a little narrower than
+   the one under it.
+
+     1. a dark copy dropped below   = shadow
+     2. a fat dark stroke + fill    = the outer outline
+     3. a thinner white stroke+fill = the bubble rim
+     4. a gradient fill             = the body
+     5. a white-to-clear fill       = the gloss
+
+   Canvas paints a stroke over its own fill, so each pass strokes first
+   and fills second. That ordering is the whole trick. */
+
+const WORD_FONT_STACK = '"Arial Black", "Arial Bold", "Segoe UI Black", Gadget, sans-serif';
+const WORD_INK = "#150e28";
+
+/* Taken straight off the mockup, where a 112px face carried a 36px
+   outline and a 17px rim. */
+const WORD_OUTLINE_RATIO = 0.32;
+const WORD_RIM_RATIO = 0.152;
+const WORD_SHADOW_RATIO = 0.11;
+
+/* The five milestones. widthFraction is how much of the board the word
+   spans, and it climbs with the tier because size sells the escalation
+   as much as colour does. It stops short of 1 because the sprite also
+   has to fit its outline and its drop shadow inside the board. */
+const MILESTONES = [
+  {
+    threshold: 5,
+    text: "GOOD",
+    widthFraction: 0.5,
+    tilt: -2,
+    body: ["#ffffff", "#a9dcff", "#2f9bef"],
+    glow: "#3fb0ff",
+    rayColour: "#6cc6ff",
+    rays: 0,
+    sparkles: 3
+  },
+  {
+    threshold: 10,
+    text: "GREAT",
+    widthFraction: 0.61,
+    tilt: -3,
+    body: ["#f2fff2", "#6bf0a6", "#0f9d59"],
+    glow: "#45e08a",
+    rayColour: "#8dffc4",
+    rays: 10,
+    sparkles: 5
+  },
+  {
+    threshold: 15,
+    text: "AMAZING",
+    widthFraction: 0.76,
+    tilt: -4,
+    body: ["#fffbe0", "#ffcf5c", "#f4770a"],
+    glow: "#ffab35",
+    rayColour: "#ffd06a",
+    rays: 14,
+    sparkles: 7
+  },
+  {
+    threshold: 20,
+    text: "UNBELIEVABLE",
+    widthFraction: 0.88,
+    tilt: -4,
+    body: ["#fbf0ff", "#c79bff", "#7b2bff"],
+    glow: "#b07cff",
+    rayColour: "#d9b6ff",
+    rays: 18,
+    sparkles: 9
+  },
+  {
+    threshold: 25,
+    text: "OMG WOW!",
+    widthFraction: 0.86,
+    tilt: -5,
+    body: ["#fff3a0", "#ffc22e", "#ff6f4d", "#ff3f9c", "#8a5bff"],
+    glow: "#ff5fb0",
+    rayColour: "#ffd23f",
+    rays: 22,
+    sparkles: 12
+  }
+];
+
+/* Timings, in seconds. The whole thing is over in just over two. */
+const WORD_PUNCH_IN = 0.13;
+const WORD_SETTLE = 0.24;
+const WORD_OVERSHOOT = 0.35;
+const WORD_AT_REST = 0.46;
+const WORD_GLINT_START = 0.28;
+const WORD_GLINT_END = 0.66;
+
+/* The whole thing is done inside a second. Settled at 0.46, a quarter
+   second sitting still, then off in another quarter. The punch itself
+   is untouched: it was only ever the tail that dragged. */
+const WORD_HOLD_UNTIL = 0.72;
+const WORD_GONE_AT = 1.00;
+
+/* One live word at a time. A bigger break replaces a smaller one that
+   is still on screen, because the player earned the louder message. */
+let milestoneWord = null;
+
+/* Sprites are expensive to build and cheap to blit, so each word is
+   drawn once and kept until the board changes size. */
+const milestoneSprites = new Map();
+let milestoneSpriteWidth = 0;
+
+function milestoneForCount(count) {
+  let found = null;
+  for (let i = 0; i < MILESTONES.length; i++) {
+    if (count >= MILESTONES[i].threshold) {
+      found = MILESTONES[i];
+    }
+  }
+  return found;
+}
+
+/* Pick the point size that makes this word land on the target width.
+   Text width is linear in point size, so one measurement is enough.
+   Scaling the drawing instead would squash the outline along with the
+   letters and leave the edges uneven. */
+function fontSizeForWidth(measurePaint, text, targetWidth) {
+  const reference = 100;
+
+  measurePaint.font = "900 " + reference + "px " + WORD_FONT_STACK;
+  const naturalWidth = measurePaint.measureText(text).width;
+
+  return (reference * targetWidth) / naturalWidth;
+}
+
+function applyWordFont(paint, fontSize) {
+  paint.font = "900 " + fontSize + "px " + WORD_FONT_STACK;
+  paint.textAlign = "center";
+  paint.textBaseline = "middle";
+  paint.lineJoin = "round";
+  paint.lineCap = "round";
+}
+
+/* Stroke then fill, so the stroke sits behind the letter and reads as
+   an outline rather than a border painted on top of it. */
+function strokeAndFill(paint, text, colour, lineWidth, x, y) {
+  paint.strokeStyle = colour;
+  paint.fillStyle = colour;
+  paint.lineWidth = lineWidth;
+  paint.strokeText(text, x, y);
+  paint.fillText(text, x, y);
+}
+
+function buildWordSprite(milestone, boardWidth, pixelRatio) {
+  const targetWidth = boardWidth * milestone.widthFraction * pixelRatio;
+
+  const gauge = document.createElement("canvas").getContext("2d");
+  const fontSize = fontSizeForWidth(gauge, milestone.text, targetWidth);
+
+  const outlineWidth = fontSize * WORD_OUTLINE_RATIO;
+  const rimWidth = fontSize * WORD_RIM_RATIO;
+  const shadowDrop = fontSize * WORD_SHADOW_RATIO;
+
+  applyWordFont(gauge, fontSize);
+  const metrics = gauge.measureText(milestone.text);
+  const above = metrics.actualBoundingBoxAscent;
+  const below = metrics.actualBoundingBoxDescent;
+
+  const margin = Math.ceil(outlineWidth / 2 + shadowDrop + fontSize * 0.06);
+  const spriteWidth = Math.ceil(targetWidth) + margin * 2;
+  const spriteHeight = Math.ceil(above + below) + margin * 2;
+
+  const centreX = spriteWidth / 2;
+  const baseline = margin + above - (above - below) / 2;
+
+  const capTop = baseline - above;
+  const capBottom = baseline + below;
+
+  const sprite = document.createElement("canvas");
+  sprite.width = spriteWidth;
+  sprite.height = spriteHeight;
+
+  const paint = sprite.getContext("2d");
+  applyWordFont(paint, fontSize);
+
+  /* 1. Shadow: the outline shape again, dropped and dimmed. */
+  paint.globalAlpha = 0.45;
+  strokeAndFill(paint, milestone.text, "#000000", outlineWidth, centreX, baseline + shadowDrop);
+  paint.globalAlpha = 1;
+
+  /* 2. Outline, 3. rim. */
+  strokeAndFill(paint, milestone.text, WORD_INK, outlineWidth, centreX, baseline);
+  strokeAndFill(paint, milestone.text, "#ffffff", rimWidth, centreX, baseline);
+
+  /* 4. Body. */
+  const bodyGradient = paint.createLinearGradient(0, capTop, 0, capBottom);
+  for (let i = 0; i < milestone.body.length; i++) {
+    bodyGradient.addColorStop(i / (milestone.body.length - 1), milestone.body[i]);
+  }
+  paint.fillStyle = bodyGradient;
+  paint.fillText(milestone.text, centreX, baseline);
+
+  /* 5. Gloss, gone by mid height. */
+  const gloss = paint.createLinearGradient(0, capTop, 0, capBottom);
+  gloss.addColorStop(0, "rgba(255, 255, 255, 0.66)");
+  gloss.addColorStop(0.34, "rgba(255, 255, 255, 0.4)");
+  gloss.addColorStop(0.55, "rgba(255, 255, 255, 0)");
+  paint.fillStyle = gloss;
+  paint.fillText(milestone.text, centreX, baseline);
+
+  /* A plain white copy of the letters, used as the mask the glint
+     sweeps inside so the shine never spills onto the background. */
+  const mask = document.createElement("canvas");
+  mask.width = spriteWidth;
+  mask.height = spriteHeight;
+
+  const cut = mask.getContext("2d");
+  applyWordFont(cut, fontSize);
+  cut.fillStyle = "#ffffff";
+  cut.fillText(milestone.text, centreX, baseline);
+
+  return {
+    image: sprite,
+    mask: mask,
+    width: spriteWidth,
+    height: spriteHeight
+  };
+}
+
+/* Rays are drawn once into their own blurred sprite. Blurring per frame
+   is far too slow on a phone, and the shape never changes: only its
+   size and its opacity do. */
+function buildRaySprite(milestone, spread, pixelRatio) {
+  const reach = spread * 0.46;
+  const inner = spread * 0.13;
+  const blur = spread * 0.022;
+  const halfWidth = ((Math.PI * 2) / milestone.rays) * 0.22;
+
+  const radius = Math.ceil((reach + blur * 3) * pixelRatio);
+  const size = radius * 2;
+
+  const sprite = document.createElement("canvas");
+  sprite.width = size;
+  sprite.height = size;
+
+  const paint = sprite.getContext("2d");
+  paint.translate(radius, radius);
+  paint.scale(pixelRatio, pixelRatio);
+  paint.filter = "blur(" + (blur * pixelRatio).toFixed(1) + "px)";
+  paint.fillStyle = milestone.rayColour;
+
+  for (let i = 0; i < milestone.rays; i++) {
+    const angle = (Math.PI * 2 * i) / milestone.rays;
+
+    paint.beginPath();
+    paint.moveTo(Math.cos(angle) * reach, Math.sin(angle) * reach);
+    paint.lineTo(Math.cos(angle - halfWidth) * inner, Math.sin(angle - halfWidth) * inner);
+    paint.lineTo(Math.cos(angle + halfWidth) * inner, Math.sin(angle + halfWidth) * inner);
+    paint.closePath();
+    paint.fill();
+  }
+
+  return { image: sprite, radius: radius / pixelRatio };
+}
+
+function milestoneSpriteFor(milestone, boardWidth, pixelRatio) {
+  if (milestoneSpriteWidth !== boardWidth) {
+    milestoneSprites.clear();
+    milestoneSpriteWidth = boardWidth;
+  }
+
+  if (milestoneSprites.has(milestone.text) === false) {
+    const spread = boardWidth * milestone.widthFraction;
+    milestoneSprites.set(milestone.text, {
+      word: buildWordSprite(milestone, boardWidth, pixelRatio),
+      rays: milestone.rays === 0 ? null : buildRaySprite(milestone, spread, pixelRatio)
+    });
+  }
+
+  return milestoneSprites.get(milestone.text);
+}
+
+/* Fire a word for a break of this size. Anything under the smallest
+   threshold is silent, which keeps ordinary three and four gem links
+   free of chatter. */
+function showMilestoneWord(count) {
+  const milestone = milestoneForCount(count);
+  if (milestone === null) return null;
+
+  /* A louder word always wins. A quieter one waits until the louder
+     one has had its moment rather than cutting it off. */
+  if (milestoneWord !== null) {
+    const live = milestoneWord.milestone.threshold;
+    if (live > milestone.threshold && milestoneWord.age < WORD_HOLD_UNTIL) {
+      return null;
+    }
+  }
+
+  const sparkles = [];
+  for (let i = 0; i < milestone.sparkles; i++) {
+    const angle = (Math.PI * 2 * i) / milestone.sparkles + Math.random() * 0.4;
+    sparkles.push({
+      angle: angle,
+      distance: 0.82 + Math.random() * 0.34,
+      size: 0.55 + Math.random() * 0.5,
+      spin: Math.random() * Math.PI
+    });
+  }
+
+  milestoneWord = { milestone: milestone, age: 0, sparkles: sparkles };
+  return milestone;
+}
+
+function updateMilestoneWord(dt) {
+  if (milestoneWord === null) return;
+
+  milestoneWord.age += dt;
+  if (milestoneWord.age >= WORD_GONE_AT) {
+    milestoneWord = null;
+  }
+}
+
+function easeOutBack(t) {
+  const overshoot = 1.9;
+  const shifted = t - 1;
+  return 1 + (overshoot + 1) * shifted * shifted * shifted + overshoot * shifted * shifted;
+}
+
+/* Read the pop curve at a given age: how big, how tilted, how faded,
+   and how far it has drifted on the way out. */
+function milestonePose(age) {
+  let scale = 1;
+  let spin = 0;
+
+  if (age < WORD_PUNCH_IN) {
+    const t = age / WORD_PUNCH_IN;
+    scale = 0.22 + (1.22 - 0.22) * easeOutBack(t);
+    spin = -16 + 19 * t;
+  } else if (age < WORD_SETTLE) {
+    const t = (age - WORD_PUNCH_IN) / (WORD_SETTLE - WORD_PUNCH_IN);
+    scale = 1.22 + (0.93 - 1.22) * t;
+    spin = 3 + (-2 - 3) * t;
+  } else if (age < WORD_OVERSHOOT) {
+    const t = (age - WORD_SETTLE) / (WORD_OVERSHOOT - WORD_SETTLE);
+    scale = 0.93 + (1.04 - 0.93) * t;
+    spin = -2 + 3 * t;
+  } else if (age < WORD_AT_REST) {
+    const t = (age - WORD_OVERSHOOT) / (WORD_AT_REST - WORD_OVERSHOOT);
+    scale = 1.04 - 0.04 * t;
+    spin = 1 - t;
+  }
+
+  let fade = 1;
+  let drift = 0;
+
+  if (age > WORD_HOLD_UNTIL) {
+    const t = (age - WORD_HOLD_UNTIL) / (WORD_GONE_AT - WORD_HOLD_UNTIL);
+    fade = 1 - t;
+    drift = -t * 54;
+    scale = 1 + t * 0.14;
+  }
+
+  let appear = 1;
+  if (age < 0.05) {
+    appear = age / 0.05;
+  }
+
+  return { scale: scale, spin: spin, fade: fade * appear, drift: drift };
+}
+
+function drawMilestoneRays(paint, rays, age) {
+  if (rays === null) return;
+
+  let opacity = 0;
+  let growth = 0.45;
+
+  if (age < WORD_PUNCH_IN) {
+    const t = age / WORD_PUNCH_IN;
+    opacity = t;
+    growth = 0.45 + 0.6 * t;
+  } else if (age < WORD_HOLD_UNTIL) {
+    const t = (age - WORD_PUNCH_IN) / (WORD_HOLD_UNTIL - WORD_PUNCH_IN);
+    opacity = 1 - t * 0.5;
+    growth = 1.05 + 0.4 * t;
+  } else {
+    const t = (age - WORD_HOLD_UNTIL) / (WORD_GONE_AT - WORD_HOLD_UNTIL);
+    opacity = 0.5 * (1 - t);
+    growth = 1.45 + 0.1 * t;
+  }
+
+  if (opacity <= 0) return;
+
+  const drawnRadius = rays.radius * growth;
+
+  paint.save();
+  paint.globalAlpha = opacity * 0.85;
+  paint.scale(1.75, 1);
+  paint.drawImage(rays.image, -drawnRadius, -drawnRadius, drawnRadius * 2, drawnRadius * 2);
+  paint.restore();
+}
+
+function traceSparkle(paint, radius) {
+  const waist = radius * 0.16;
+
+  paint.beginPath();
+  paint.moveTo(0, -radius);
+  paint.quadraticCurveTo(waist, -waist, radius, 0);
+  paint.quadraticCurveTo(waist, waist, 0, radius);
+  paint.quadraticCurveTo(-waist, waist, -radius, 0);
+  paint.quadraticCurveTo(-waist, -waist, 0, -radius);
+  paint.closePath();
+}
+
+function drawMilestoneSparkles(paint, word, age, spread) {
+  if (age < WORD_SETTLE) return;
+
+  let opacity = 1;
+  let pop = 1;
+
+  if (age < WORD_AT_REST) {
+    const t = (age - WORD_SETTLE) / (WORD_AT_REST - WORD_SETTLE);
+    pop = 1.35 - 0.35 * t;
+  }
+  if (age > WORD_HOLD_UNTIL) {
+    const t = (age - WORD_HOLD_UNTIL) / (WORD_GONE_AT - WORD_HOLD_UNTIL);
+    opacity = 1 - t;
+    pop = 1 - t * 0.4;
+  }
+
+  paint.save();
+  paint.globalAlpha = opacity;
+  paint.fillStyle = "#ffffff";
+
+  for (let i = 0; i < word.sparkles.length; i++) {
+    const spark = word.sparkles[i];
+    const x = Math.cos(spark.angle) * spread * 0.66 * spark.distance;
+    const y = Math.sin(spark.angle) * spread * 0.24 * spark.distance;
+
+    paint.save();
+    paint.translate(x, y);
+    paint.rotate(spark.spin);
+    traceSparkle(paint, spread * 0.035 * spark.size * pop);
+    paint.fill();
+    paint.restore();
+  }
+
+  paint.restore();
+}
+
+/* The glint: a soft white bar sweeping across, kept inside the letters
+   by painting it through the letter mask. */
+function drawMilestoneGlint(paint, sprite, age) {
+  if (age < WORD_GLINT_START || age > WORD_GLINT_END) return;
+
+  const travel = (age - WORD_GLINT_START) / (WORD_GLINT_END - WORD_GLINT_START);
+  const bandWidth = sprite.width * 0.2;
+  const centreX = sprite.width * (-0.1 + travel * 1.2);
+
+  const glint = document.createElement("canvas");
+  glint.width = sprite.width;
+  glint.height = sprite.height;
+
+  const shine = glint.getContext("2d");
+  shine.drawImage(sprite.mask, 0, 0);
+  shine.globalCompositeOperation = "source-in";
+
+  const sweep = shine.createLinearGradient(centreX - bandWidth, 0, centreX + bandWidth, 0);
+  sweep.addColorStop(0, "rgba(255, 255, 255, 0)");
+  sweep.addColorStop(0.5, "rgba(255, 255, 255, 0.7)");
+  sweep.addColorStop(1, "rgba(255, 255, 255, 0)");
+
+  shine.fillStyle = sweep;
+  shine.fillRect(0, 0, sprite.width, sprite.height);
+
+  paint.drawImage(glint, -sprite.width / 2, -sprite.height / 2);
+}
+
+/* Draw the live word centred on the board. */
+function drawMilestoneWord(paint, boardWidth, boardHeight, pixelRatio) {
+  if (milestoneWord === null) return;
+
+  const milestone = milestoneWord.milestone;
+  const cached = milestoneSpriteFor(milestone, boardWidth, pixelRatio);
+  const sprite = cached.word;
+  const pose = milestonePose(milestoneWord.age);
+  const spread = boardWidth * milestone.widthFraction;
+
+  paint.save();
+  paint.translate(boardWidth / 2, boardHeight * 0.42 + pose.drift);
+  paint.globalAlpha = pose.fade;
+
+  drawMilestoneRays(paint, cached.rays, milestoneWord.age);
+
+  paint.save();
+  paint.rotate(((milestone.tilt + pose.spin) * Math.PI) / 180);
+  paint.scale(pose.scale / pixelRatio, pose.scale / pixelRatio);
+
+  paint.drawImage(sprite.image, -sprite.width / 2, -sprite.height / 2);
+  drawMilestoneGlint(paint, sprite, milestoneWord.age);
+
+  paint.restore();
+
+  drawMilestoneSparkles(paint, milestoneWord, milestoneWord.age, spread);
+  paint.restore();
+}
+
+/* ---- MILESTONE WORDS: END ---- */
+
+
+/* ------------------------------------------------------------------
+   Drawing
+   ------------------------------------------------------------------ */
+
+function chooseRowCount(rect) {
+  const cellByWidth = Math.floor(rect.width / COLS);
+  const rowsThatFit = Math.floor(rect.height / cellByWidth);
+
+  ROWS = Math.max(8, Math.min(12, rowsThatFit));
+}
+
+function resizeCanvas() {
+  const rect = stage.getBoundingClientRect();
+  const dpr = window.devicePixelRatio;
+
+  const cellByWidth = Math.floor(rect.width / COLS);
+  const cellByHeight = Math.floor(rect.height / ROWS);
+  const cell = Math.max(24, Math.min(cellByWidth, cellByHeight));
+
+  layout.cell = cell;
+  layout.width = cell * COLS;
+  layout.height = cell * ROWS;
+  layout.originX = 0;
+  layout.originY = 0;
+  layout.pixelRatio = dpr;
+
+  /* Word sprites are built for one board width. A resize invalidates
+     every one of them. */
+  milestoneSprites.clear();
+  milestoneSpriteWidth = 0;
+
+  canvas.style.width = layout.width + "px";
+  canvas.style.height = layout.height + "px";
+  canvas.width = Math.round(layout.width * dpr);
+  canvas.height = Math.round(layout.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+function roundedRect(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function tracePolygon(cx, cy, radius, sides, rotation) {
+  ctx.beginPath();
+  for (let i = 0; i < sides; i++) {
+    const angle = rotation + (Math.PI * 2 * i) / sides;
+    const x = cx + Math.cos(angle) * radius;
+    const y = cy + Math.sin(angle) * radius;
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.closePath();
+}
+
+function traceGemShape(shape, cx, cy, radius, spin) {
+  if (shape === "circle") {
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    return;
+  }
+  if (shape === "diamond") {
+    tracePolygon(cx, cy, radius * 1.12, 4, spin - Math.PI / 2);
+    return;
+  }
+  if (shape === "square") {
+    tracePolygon(cx, cy, radius * 1.06, 4, spin + Math.PI / 4);
+    return;
+  }
+  if (shape === "triangle") {
+    tracePolygon(cx, cy, radius * 1.15, 3, spin - Math.PI / 2);
+    return;
+  }
+  tracePolygon(cx, cy, radius * 1.05, 6, spin);
+}
+
+function drawBackdrop() {
+  const hueShift = (game.level - 1) * 26;
+  const gradient = ctx.createLinearGradient(0, 0, 0, layout.height);
+  gradient.addColorStop(0, "hsl(" + ((262 + hueShift) % 360) + ", 44%, 12%)");
+  gradient.addColorStop(1, "hsl(" + ((228 + hueShift) % 360) + ", 50%, 7%)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, layout.width, layout.height);
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.045)";
+  ctx.lineWidth = 1;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const x = layout.originX + col * layout.cell;
+      const y = layout.originY + row * layout.cell;
+      roundedRect(x + 2, y + 2, layout.cell - 4, layout.cell - 4, layout.cell * 0.18);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawStone(cell, cx, cy, radius) {
+  const size = radius * 1.7;
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  const gradient = ctx.createLinearGradient(-size / 2, -size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "#7d7597");
+  gradient.addColorStop(1, "#433d5c");
+
+  roundedRect(-size / 2, -size / 2, size, size, size * 0.22);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.18)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  /* One crack mark per hit taken, so a tough stone reads as tough. */
+  ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+  ctx.lineWidth = Math.max(1.6, radius * 0.1);
+
+  const crackPaths = [
+    [[-0.30, -0.26], [-0.05,  0.00], [-0.18,  0.30]],
+    [[ 0.32, -0.30], [ 0.08,  0.05], [ 0.30,  0.32]],
+    [[-0.30,  0.32], [-0.02,  0.18], [ 0.22,  0.34]],
+    [[-0.32, -0.06], [ 0.00, -0.20], [ 0.30, -0.10]],
+    [[-0.10, -0.34], [ 0.04, -0.06], [-0.06,  0.30]]
+  ];
+
+  const cracks = Math.min(crackPaths.length, cell.maxHp - cell.hp);
+  for (let i = 0; i < cracks; i++) {
+    const points = crackPaths[i];
+    ctx.beginPath();
+    ctx.moveTo(points[0][0] * size, points[0][1] * size);
+    ctx.lineTo(points[1][0] * size, points[1][1] * size);
+    ctx.lineTo(points[2][0] * size, points[2][1] * size);
+    ctx.stroke();
+  }
+
+  /* Tough stones get a brighter rim so you can tell at a glance that
+     they will take more than the usual two hits. */
+  if (cell.maxHp > 2) {
+    ctx.strokeStyle = "rgba(255, 214, 120, " + Math.min(0.85, 0.25 + cell.maxHp * 0.1) + ")";
+    ctx.lineWidth = Math.max(1.5, radius * 0.08);
+    roundedRect(-size / 2 + 3, -size / 2 + 3, size - 6, size - 6, size * 0.18);
+    ctx.stroke();
+  }
+
+  /* Past three hit points the cracks stop being countable, so the hits
+     remaining are written on the stone instead. */
+  if (cell.maxHp > 3) {
+    ctx.font = "bold " + Math.round(radius * 0.85) + "px Trebuchet MS, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.lineWidth = Math.max(2, radius * 0.14);
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+    ctx.strokeText(String(cell.hp), 0, 0);
+    ctx.fillStyle = "#ffe0a8";
+    ctx.fillText(String(cell.hp), 0, 0);
+  }
+
+  ctx.restore();
+}
+
+function drawGem(cell, cx, cy, radius) {
+  const palette = GEM_COLOURS[cell.colour];
+
+  ctx.save();
+
+  /* Body */
+  ctx.shadowColor = palette.glow;
+  ctx.shadowBlur = radius * 0.7;
+  traceGemShape(palette.shape, cx, cy, radius, cell.spin);
+
+  const body = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+  body.addColorStop(0, palette.rim);
+  body.addColorStop(0.45, palette.core);
+  body.addColorStop(1, palette.glow);
+  ctx.fillStyle = body;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  /* Rim light */
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.lineWidth = Math.max(1.5, radius * 0.09);
+  traceGemShape(palette.shape, cx, cy, radius * 0.97, cell.spin);
+  ctx.stroke();
+
+  /* Highlight blob */
+  ctx.beginPath();
+  ctx.ellipse(cx - radius * 0.3, cy - radius * 0.36, radius * 0.26, radius * 0.16, -0.7, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.fill();
+
+  if (cell.special === "bomb") {
+    drawBombMarks(cx, cy, radius);
+  }
+  if (cell.special === "prism") {
+    drawPrismMarks(cx, cy, radius);
+  }
+  if (cell.blighted === true) {
+    drawBlight(cx, cy, radius);
+  }
+
+  ctx.restore();
+}
+
+function drawBombMarks(cx, cy, radius) {
+  const pulse = 0.7 + Math.sin(game.time * 7) * 0.3;
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.44, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(20, 12, 28, 0.85)";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.2 * pulse, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffd47a";
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 212, 122, " + pulse + ")";
+  ctx.lineWidth = Math.max(1.5, radius * 0.08);
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.62, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function drawPrismMarks(cx, cy, radius) {
+  const spin = game.time * 1.6;
+
+  for (let i = 0; i < GEM_COLOURS.length; i++) {
+    const angle = spin + (Math.PI * 2 * i) / GEM_COLOURS.length;
+    ctx.beginPath();
+    ctx.arc(
+      cx + Math.cos(angle) * radius * 0.5,
+      cy + Math.sin(angle) * radius * 0.5,
+      radius * 0.17,
+      0,
+      Math.PI * 2
+    );
+    ctx.fillStyle = GEM_COLOURS[i].core;
+    ctx.fill();
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.22, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+}
+
+function drawBlight(cx, cy, radius) {
+  const wobble = Math.sin(game.time * 3) * radius * 0.05;
+
+  ctx.beginPath();
+  for (let i = 0; i < 12; i++) {
+    const angle = (Math.PI * 2 * i) / 12;
+    const jag = radius * (0.86 + (i % 2 === 0 ? 0.14 : -0.1)) + wobble;
+    const x = cx + Math.cos(angle) * jag;
+    const y = cy + Math.sin(angle) * jag;
+    if (i === 0) {
+      ctx.moveTo(x, y);
+    } else {
+      ctx.lineTo(x, y);
+    }
+  }
+  ctx.closePath();
+  /* Kept translucent so the gem colour underneath still reads. You
+     have to be able to see what you are matching to cure it. */
+  ctx.fillStyle = "rgba(18, 4, 30, 0.58)";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(190, 90, 255, 0.75)";
+  ctx.lineWidth = Math.max(1.5, radius * 0.09);
+  ctx.stroke();
+
+  /* Two small eyes give the blight a face. */
+  const eyeGlow = 0.55 + Math.sin(game.time * 5) * 0.35;
+  ctx.fillStyle = "rgba(255, 120, 220, " + eyeGlow + ")";
+  ctx.beginPath();
+  ctx.arc(cx - radius * 0.24, cy - radius * 0.05, radius * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(cx + radius * 0.24, cy - radius * 0.05, radius * 0.1, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawCells() {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      const centre = cellCentre(row, col);
+      const y = centre.y + cell.offsetY;
+
+      let scale = cell.scale;
+      /* A doomed cell waiting for the wave to reach it is still drawn
+         as a live gem. It only pops once its delay has run out. */
+      if (cell.doomed === true && cell.dyingDelay <= 0) {
+        const t = Math.max(0, cell.dying / cell.dyingMax);
+        scale = t * 1.35;
+      }
+      if (scale <= 0.01) continue;
+
+      const radius = layout.cell * 0.38 * scale;
+
+      if (cell.kind === "stone") {
+        drawStone(cell, centre.x, y, radius);
+      } else {
+        drawGem(cell, centre.x, y, radius);
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------
+   The inside of a closed loop
+
+   Drawn in two halves. The tint goes under the gems so it reads as the
+   ground the ring has claimed, and the marks go over them so whatever
+   was caught is never hidden by its own highlight.
+   ------------------------------------------------------------------ */
+
+function drawLoopInteriorGlow() {
+  if (game.loopClosed === false) return;
+  if (game.pathColour === -1) return;
+
+  const summary = loopInteriorSummary();
+  const palette = GEM_COLOURS[game.pathColour];
+  const pulse = 0.5 + Math.sin(game.time * 9) * 0.5;
+
+  let alpha = 0.14 + pulse * 0.12;
+  if (loopCaughtSomething(summary) === true) {
+    alpha = 0.24 + pulse * 0.22;
+  }
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = palette.core;
+
+  for (let i = 0; i < summary.cells.length; i++) {
+    const spot = summary.cells[i];
+    const x = layout.originX + spot.col * layout.cell;
+    const y = layout.originY + spot.row * layout.cell;
+    roundedRect(x + 2, y + 2, layout.cell - 4, layout.cell - 4, layout.cell * 0.18);
+    ctx.fill();
+  }
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/* Every special caught in the middle gets a halo, and the effects are
+   listed once above the ring. Labelling every cell put two words on
+   top of each other the moment two specials sat side by side, which is
+   exactly the case worth showing off. */
+function drawLoopCatchMarks() {
+  if (game.loopClosed === false) return;
+  if (game.pathColour === -1) return;
+
+  const summary = loopInteriorSummary();
+  if (loopCaughtSomething(summary) === false) return;
+
+  /* Radius per kind, so a gem that is both blighted and a bomb draws
+     two rings nested, one inside the other. */
+  const haloed = [];
+  const lines = [];
+
+  for (let i = 0; i < summary.bombs.length; i++) {
+    haloed.push({ spot: summary.bombs[i], colour: "#ffd47a", radius: 0.5 });
+  }
+  if (summary.bombs.length > 0) lines.push({ text: "x3 BLAST", colour: "#ffd47a" });
+
+  for (let i = 0; i < summary.stones.length; i++) {
+    haloed.push({ spot: summary.stones[i], colour: "#cfc7e6", radius: 0.5 });
+  }
+  if (summary.stones.length > 0) lines.push({ text: "ALL STONES", colour: "#cfc7e6" });
+
+  for (let i = 0; i < summary.blighted.length; i++) {
+    haloed.push({ spot: summary.blighted[i], colour: "#45e08a", radius: 0.58 });
+  }
+  if (summary.blighted.length > 0) lines.push({ text: "ALL BLIGHT", colour: "#45e08a" });
+
+  for (let i = 0; i < summary.prisms.length; i++) {
+    haloed.push({ spot: summary.prisms[i], colour: "#ffffff", radius: 0.44 });
+  }
+  if (summary.prisms.length > 0) lines.push({ text: "WHOLE BOARD", colour: "#ffffff" });
+
+  const spin = game.time * 3;
+  const pulse = 1 + Math.sin(game.time * 11) * 0.08;
+
+  ctx.save();
+
+  for (let i = 0; i < haloed.length; i++) {
+    const mark = haloed[i];
+    const centre = cellCentre(mark.spot.row, mark.spot.col);
+
+    /* A dashed ring, turning, so the halo cannot be mistaken for the
+       plain white ring the linked gems already wear. */
+    ctx.setLineDash([layout.cell * 0.14, layout.cell * 0.1]);
+    ctx.lineDashOffset = -spin * layout.cell * 0.3;
+    ctx.strokeStyle = mark.colour;
+    ctx.lineWidth = Math.max(2, layout.cell * 0.07);
+    ctx.shadowColor = mark.colour;
+    ctx.shadowBlur = layout.cell * 0.35;
+    ctx.beginPath();
+    ctx.arc(centre.x, centre.y, layout.cell * mark.radius * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.setLineDash([]);
+  ctx.shadowBlur = 0;
+  drawLoopCatchLegend(summary, lines);
+  ctx.restore();
+}
+
+/* The list of what is about to happen, stacked over the ring. It sits
+   above the trapped cells, and drops below them when the ring is close
+   enough to the top of the board that there is no room up there. */
+function drawLoopCatchLegend(summary, lines) {
+  let leftCol = COLS;
+  let rightCol = 0;
+  let topRow = ROWS;
+  let bottomRow = 0;
+
+  for (let i = 0; i < summary.cells.length; i++) {
+    const spot = summary.cells[i];
+    if (spot.col < leftCol) leftCol = spot.col;
+    if (spot.col > rightCol) rightCol = spot.col;
+    if (spot.row < topRow) topRow = spot.row;
+    if (spot.row > bottomRow) bottomRow = spot.row;
+  }
+
+  const middleX = layout.originX + ((leftCol + rightCol) / 2 + 0.5) * layout.cell;
+  const lineHeight = layout.cell * 0.3;
+  const aboveRing = layout.originY + topRow * layout.cell - layout.cell * 0.3;
+  const belowRing = layout.originY + (bottomRow + 1) * layout.cell + layout.cell * 0.3;
+
+  /* Where the top line goes. Stacked upward from the ring by default. */
+  let firstLineY = aboveRing - (lines.length - 1) * lineHeight;
+  if (firstLineY < lineHeight) {
+    firstLineY = belowRing;
+  }
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "bold " + Math.round(layout.cell * 0.24) + "px Trebuchet MS, sans-serif";
+  ctx.lineWidth = 3.5;
+
+  for (let i = 0; i < lines.length; i++) {
+    const y = firstLineY + i * lineHeight;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.strokeText(lines[i].text, middleX, y);
+    ctx.fillStyle = lines[i].colour;
+    ctx.fillText(lines[i].text, middleX, y);
+  }
+}
+
+function drawPath() {
+  if (game.path.length === 0) return;
+
+  const colourIndex = game.pathColour === -1 ? 4 : game.pathColour;
+  const palette = GEM_COLOURS[colourIndex];
+
+  ctx.save();
+  ctx.lineWidth = layout.cell * 0.16;
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+  ctx.shadowColor = palette.glow;
+  ctx.shadowBlur = layout.cell * 0.4;
+  ctx.strokeStyle = game.loopClosed === true ? "#ffffff" : palette.rim;
+  ctx.globalAlpha = 0.9;
+
+  ctx.beginPath();
+  for (let i = 0; i < game.path.length; i++) {
+    const spot = game.path[i];
+    const centre = cellCentre(spot.row, spot.col);
+    const cell = cellAt(spot.row, spot.col);
+    const y = centre.y + cell.offsetY;
+    if (i === 0) {
+      ctx.moveTo(centre.x, y);
+    } else {
+      ctx.lineTo(centre.x, y);
+    }
+  }
+
+  if (game.loopClosed === true) {
+    const first = game.path[0];
+    const centre = cellCentre(first.row, first.col);
+    ctx.lineTo(centre.x, centre.y);
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  /* Rings around every linked gem. */
+  ctx.save();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+  ctx.lineWidth = Math.max(2, layout.cell * 0.05);
+  const pulse = 1 + Math.sin(game.time * 12) * 0.06;
+
+  for (let i = 0; i < game.path.length; i++) {
+    const spot = game.path[i];
+    const centre = cellCentre(spot.row, spot.col);
+    const cell = cellAt(spot.row, spot.col);
+    ctx.beginPath();
+    ctx.arc(centre.x, centre.y + cell.offsetY, layout.cell * 0.46 * pulse, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  /* Link counter floating by the head of the path. */
+  if (game.path.length >= 2) {
+    const head = game.path[game.path.length - 1];
+    const centre = cellCentre(head.row, head.col);
+    ctx.save();
+    ctx.font = "bold " + Math.round(layout.cell * 0.34) + "px Trebuchet MS, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = game.path.length >= MIN_LINK ? "#ffffff" : "rgba(255,255,255,0.5)";
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+    ctx.lineWidth = 3;
+    const label = String(game.path.length);
+    const ty = centre.y - layout.cell * 0.52;
+    ctx.strokeText(label, centre.x, ty);
+    ctx.fillText(label, centre.x, ty);
+    ctx.restore();
+  }
+
+  drawLoopCatchMarks();
+}
+
+function drawAimHint() {
+  if (game.aiming === "none") return;
+
+  const alpha = 0.15 + Math.sin(game.time * 6) * 0.08;
+  ctx.fillStyle = "rgba(69, 224, 138, " + alpha + ")";
+  ctx.fillRect(0, 0, layout.width, layout.height);
+
+  const text = game.aiming === "bomb" ? "TAP A GEM TO PLANT" : "TAP A COLOUR TO PURGE";
+
+  ctx.save();
+  ctx.font = "bold " + Math.round(layout.cell * 0.32) + "px Trebuchet MS, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#ffffff";
+  ctx.strokeStyle = "rgba(0,0,0,0.75)";
+  ctx.lineWidth = 4;
+  ctx.strokeText(text, layout.width / 2, layout.height / 2);
+  ctx.fillText(text, layout.width / 2, layout.height / 2);
+  ctx.restore();
+}
+
+function drawParticles() {
+  for (let i = 0; i < particles.length; i++) {
+    const p = particles[i];
+    if (p.delay > 0) continue;
+    const alpha = Math.max(0, p.life / p.maxLife);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.colour;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * alpha, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawFloaters() {
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (let i = 0; i < floaters.length; i++) {
+    const f = floaters[i];
+    const t = f.life / f.maxLife;
+    ctx.globalAlpha = Math.min(1, t * 1.6);
+    ctx.font = "bold " + Math.round(layout.cell * 0.42) + "px Trebuchet MS, sans-serif";
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.lineWidth = 4;
+    ctx.strokeText(f.text, f.x, f.y);
+    ctx.fillStyle = f.colour;
+    ctx.fillText(f.text, f.x, f.y);
+  }
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function drawBlightMeter() {
+  const blight = countBlight();
+  if (blight === 0) return;
+
+  const barHeight = 5;
+  const fraction = Math.min(1, blight / blightLossThreshold());
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
+  ctx.fillRect(0, layout.height - barHeight, layout.width, barHeight);
+
+  const danger = fraction > 0.7;
+  ctx.fillStyle = danger === true ? "#ff5470" : "#a24dff";
+  ctx.fillRect(0, layout.height - barHeight, layout.width * fraction, barHeight);
+}
+
+function render() {
+  ctx.save();
+
+  if (game.shake > 0.2) {
+    const dx = (Math.random() * 2 - 1) * game.shake;
+    const dy = (Math.random() * 2 - 1) * game.shake;
+    ctx.translate(dx, dy);
+  }
+
+  drawBackdrop();
+  drawLoopInteriorGlow();
+  drawCells();
+  drawShockwaves();
+  drawPath();
+  drawParticles();
+  drawFloaters();
+  drawAimHint();
+  drawBlightMeter();
+  drawMilestoneWord(ctx, layout.width, layout.height, layout.pixelRatio);
+  drawScreenFlash();
+
+  ctx.restore();
+}
+
+/* ------------------------------------------------------------------
+   Main loop
+   ------------------------------------------------------------------ */
+
+let lastFrame = 0;
+
+function frame(now) {
+  if (lastFrame === 0) lastFrame = now;
+
+  /* Clamp dt so a backgrounded tab does not teleport the animation. */
+  let dt = (now - lastFrame) / 1000;
+  if (dt > 0.05) dt = 0.05;
+  lastFrame = now;
+
+  window.requestAnimationFrame(frame);
+
+  /* Nothing to draw until the stage has a measured size. */
+  if (boardReady === false) return;
+
+  game.time += dt;
+  update(dt);
+  render();
+}
+
+function update(dt) {
+  if (game.shake > 0) {
+    game.shake -= dt * 34;
+    if (game.shake < 0) game.shake = 0;
+  }
+
+  updateParticles(dt);
+  updateShockwaves(dt);
+  updateToast(dt);
+  updateMilestoneWord(dt);
+  updateCellAnimations(dt);
+
+  if (game.phase === "bursting") {
+    game.burstTimer -= dt;
+    if (game.burstTimer <= 0) {
+      removeDeadCells();
+      applyGravity();
+      game.phase = "falling";
+    }
+  } else if (game.phase === "falling") {
+    if (boardIsSettled() === true) {
+      checkLevelState();
+    }
+  }
+}
+
+function updateCellAnimations(dt) {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell === null) continue;
+
+      if (cell.dyingDelay > 0) {
+        cell.dyingDelay -= dt;
+        if (cell.dyingDelay < 0) cell.dyingDelay = 0;
+      } else if (cell.dying > 0) {
+        cell.dying -= dt;
+        if (cell.dying < 0) cell.dying = 0;
+      }
+
+      if (cell.offsetY < 0) {
+        cell.fallSpeed += 3600 * dt;
+        cell.offsetY += cell.fallSpeed * dt;
+        if (cell.offsetY >= 0) {
+          cell.offsetY = 0;
+          cell.fallSpeed = 0;
+          cell.scale = 1.16;
+        }
+      }
+
+      if (cell.scale > 1) {
+        cell.scale -= dt * 2.4;
+        if (cell.scale < 1) cell.scale = 1;
+      }
+      if (cell.scale < 1) {
+        cell.scale += dt * 4;
+        if (cell.scale > 1) cell.scale = 1;
+      }
+    }
+  }
+}
+
+/* ------------------------------------------------------------------
+   Input
+   ------------------------------------------------------------------ */
+
+function pointToCell(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const x = clientX - rect.left;
+  const y = clientY - rect.top;
+
+  const col = Math.floor(x / layout.cell);
+  const row = Math.floor(y / layout.cell);
+
+  if (insideBoard(row, col) === false) return null;
+
+  /* The live part of a cell is a disc around its middle. Corners stay
+     dead so a diagonal drag cannot clip the two cells either side of
+     the corner it passes through: those centres sit 0.707 of a cell
+     away from the diagonal, comfortably outside this radius. */
+  const centre = cellCentre(row, col);
+  const dx = x - centre.x;
+  const dy = y - centre.y;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  if (distance > layout.cell * HIT_RADIUS) return null;
+
+  return { row: row, col: col };
+}
+
+let pointerDown = false;
+let lastPointerX = 0;
+let lastPointerY = 0;
+
+function onPointerDown(event) {
+  ensureAudio();
+
+  if (game.phase !== "idle") return;
+  event.preventDefault();
+
+  const spot = pointToCell(event.clientX, event.clientY);
+  if (spot === null) return;
+
+  if (game.aiming !== "none") {
+    fireArmedItemAt(spot.row, spot.col);
+    return;
+  }
+
+  pointerDown = true;
+  lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
+  beginPath(spot.row, spot.col);
+}
+
+function onPointerMove(event) {
+  if (pointerDown === false) return;
+  if (game.phase !== "idle") return;
+  event.preventDefault();
+
+  /* A moving finger reports positions that can be more than a cell
+     apart, and a link only extends to a neighbour of its head. Walking
+     the route between two samples in small steps visits every cell
+     along the way, so a fast drag registers the same chain a slow one
+     does. */
+  const dx = event.clientX - lastPointerX;
+  const dy = event.clientY - lastPointerY;
+  const distance = Math.sqrt(dx * dx + dy * dy);
+  const steps = Math.max(1, Math.ceil(distance / (layout.cell * 0.25)));
+
+  for (let i = 1; i <= steps; i++) {
+    const x = lastPointerX + (dx * i) / steps;
+    const y = lastPointerY + (dy * i) / steps;
+    const spot = pointToCell(x, y);
+    if (spot !== null) {
+      extendPath(spot.row, spot.col);
+    }
+  }
+
+  lastPointerX = event.clientX;
+  lastPointerY = event.clientY;
+}
+
+function onPointerUp(event) {
+  if (pointerDown === false) return;
+  pointerDown = false;
+  event.preventDefault();
+
+  if (game.phase !== "idle") {
+    game.path = [];
+    return;
+  }
+
+  resolvePath();
+}
+
+/* Move and release are watched on the window so a drag that wanders
+   off the edge of the board still tracks and still resolves. */
+canvas.addEventListener("pointerdown", onPointerDown);
+window.addEventListener("pointermove", onPointerMove, { passive: false });
+window.addEventListener("pointerup", onPointerUp);
+window.addEventListener("pointercancel", onPointerUp);
+canvas.addEventListener("contextmenu", function (event) { event.preventDefault(); });
+
+/* ------------------------------------------------------------------
+   HUD updates
+   ------------------------------------------------------------------ */
+
+function refreshHud() {
+  scoreValue.textContent = String(game.score);
+  movesValue.textContent = String(Math.max(0, game.moves));
+  levelValue.textContent = String(game.level);
+
+  if (game.moves <= 4) {
+    movesStat.classList.add("low");
+  } else {
+    movesStat.classList.remove("low");
+  }
+
+  goalText.textContent = game.goal.label;
+
+  const shown = Math.min(game.goal.progress, game.goal.target);
+  goalCount.textContent = shown + "/" + game.goal.target;
+  goalFill.style.width = (shown / game.goal.target) * 100 + "%";
+
+  updateItemBar();
+}
+
+/* The item row is built once and then only restyled, so the buttons
+   keep their identity across redraws. */
+function buildItemBar() {
+  /* A notch on the charge bar for every item, so you can see how far
+     off the next one is without doing the arithmetic. */
+  for (let i = 0; i < ITEMS.length; i++) {
+    const item = ITEMS[i];
+    if (item.cost >= CHARGE_MAX) continue;
+
+    const tick = document.createElement("div");
+    tick.className = "chargeTick";
+    tick.dataset.cost = String(item.cost);
+    tick.style.left = (item.cost / CHARGE_MAX) * 100 + "%";
+    chargeTicks.appendChild(tick);
+  }
+
+  for (let i = 0; i < ITEMS.length; i++) {
+    const item = ITEMS[i];
+    const button = document.createElement("button");
+    button.className = "itemBtn";
+    button.dataset.item = item.id;
+    button.innerHTML =
+      "<span class='glyph'>" + item.glyph + "</span>" +
+      "<span class='name'>" + item.label + " " + item.cost + "</span>";
+
+    button.addEventListener("click", function () {
+      ensureAudio();
+      selectItem(item.id);
+    });
+
+    itemRow.appendChild(button);
+  }
+}
+
+function updateItemBar() {
+  chargeFill.style.width = (game.charge / CHARGE_MAX) * 100 + "%";
+  chargeValue.textContent = game.charge + "/" + CHARGE_MAX;
+
+  const ticks = chargeTicks.querySelectorAll(".chargeTick");
+  for (let i = 0; i < ticks.length; i++) {
+    const cost = parseInt(ticks[i].dataset.cost, 10);
+    if (game.charge >= cost) {
+      ticks[i].classList.add("reached");
+    } else {
+      ticks[i].classList.remove("reached");
+    }
+  }
+
+  const buttons = itemRow.querySelectorAll(".itemBtn");
+  for (let i = 0; i < buttons.length; i++) {
+    const button = buttons[i];
+    const id = button.dataset.item;
+
+    button.classList.remove("ready");
+    button.classList.remove("armed");
+
+    if (game.aiming === id) {
+      button.classList.add("armed");
+    } else if (canAfford(id) === true) {
+      button.classList.add("ready");
+    }
+  }
+}
+
+/* ------------------------------------------------------------------
+   Card overlay
+   ------------------------------------------------------------------ */
+
+let cardAction = null;
+let cardAltAction = null;
+
+function showCard(title, subtitle, bodyHtml, buttonText, action, altText, altAction) {
+  cardTitle.textContent = title;
+  cardSub.textContent = subtitle;
+  cardBody.innerHTML = bodyHtml;
+  cardBtn.textContent = buttonText;
+  cardAction = action;
+
+  if (altText === undefined) {
+    cardAltAction = null;
+    cardBtnAlt.classList.add("hidden");
+  } else {
+    cardAltAction = altAction;
+    cardBtnAlt.textContent = altText;
+    cardBtnAlt.classList.remove("hidden");
+  }
+
+  overlay.classList.remove("hidden");
+}
+
+function hideCard() {
+  overlay.classList.add("hidden");
+  cardAction = null;
+  cardAltAction = null;
+  cardBtnAlt.classList.add("hidden");
+}
+
+cardBtn.addEventListener("click", function () {
+  ensureAudio();
+  if (boardReady === false) {
+    measureStage();
+  }
+  if (cardAction === null) return;
+  const action = cardAction;
+  cardAction = null;
+  action();
+});
+
+cardBtnAlt.addEventListener("click", function () {
+  ensureAudio();
+  if (cardAltAction === null) return;
+  const action = cardAltAction;
+  cardAltAction = null;
+  action();
+});
+
+function howToPlayHtml() {
+  return "" +
+  "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>3 or more</b> to burst them.</span></div>" +
+  "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>" +
+  "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>5</b> to forge a <b>Bomb</b>, link <b>7</b> to forge a <b>Prism</b> that torches a whole colour.</span></div>" +
+  "<div class='rule'><span class='pip'>&#9678;</span><span>Loop <b>around</b> something without linking it and it goes off far harder. A bomb blasts <b>three cells</b> in every direction, a stone takes <b>every stone</b> with it, a blight <b>cures the board</b>, and a Prism clears the <b>whole board</b>.</span></div>" +
+  "<div class='rule'><span class='pip'>&#9632;</span><span><b>Stones</b> crack when a gem bursts beside them and take a full hit from any bomb blast.</span></div>" +
+  "<div class='rule'><span class='pip'>&#9760;</span><span>The <b>Blight</b> creeps in from level three and follows you between levels. Link a blighted gem to cure it. " + blightLossThreshold() + " blighted cells ends the level.</span></div>" +
+  "<div class='rule'><span class='pip'>&#9878;</span><span>Bursting fills your <b>charge</b>. Spend it on Shuffle, Bomb, +2 Moves or a full colour Purge.</span></div>" +
+  "<div class='rule'><span class='pip'>&#10010;</span><span>You start with <b>3 continues</b> and earn one every 10 levels. A continue replays the level and rewinds the score you made on it.</span></div>";
+}
+
+/* Shown at the top of the title card when the browser will not save, so
+   the player finds out before the run rather than after it. */
+function storageWarningHtml() {
+  if (storageWorks === true) return "";
+
+  return "<div class='rule'><span class='pip' style='color:var(--danger)'>&#9888;</span>" +
+    "<span style='color:var(--danger)'>This browser will not let the game save. Your run and your " +
+    "best score are gone when you close the page. Opening the game from a web address instead of a " +
+    "file on the device fixes it.</span></div>";
+}
+
+function showTitleCard() {
+  cardStats.style.display = "none";
+
+  const saved = readSave();
+
+  if (saved === null) {
+    showCard("Prism Path", "Link. Loop. Purge the blight.",
+      storageWarningHtml() + howToPlayHtml(), "Play",
+      function () { startRun(); hideCard(); });
+    return;
+  }
+
+  showCard(
+    "Prism Path",
+    "You have a run in progress.",
+    storageWarningHtml() +
+    "<div class='rule'><span class='pip'>&#9670;</span><span>Saved on <b>level " + saved.level + "</b> with <b>" + saved.score + "</b> points and <b>" + saved.continues + "</b> continues.</span></div>" +
+    howToPlayHtml(),
+    "Resume Level " + saved.level,
+    function () { loadGame(saved); hideCard(); },
+    "New Run",
+    function () { clearSave(); startRun(); hideCard(); }
+  );
+}
+
+/* ------------------------------------------------------------------
+   Menu
+   ------------------------------------------------------------------ */
+
+function menuIsOpen() {
+  return menuPanel.classList.contains("hidden") === false;
+}
+
+/* The panel is two pages in the one card. Opening it and closing it
+   both land on the main page, so it never comes back halfway inside a
+   submenu the player walked away from. */
+function showMenuMain() {
+  menuTitle.textContent = "Paused";
+  soundsPage.classList.add("hidden");
+  menuMain.classList.remove("hidden");
+}
+
+function showSoundsPage() {
+  menuTitle.textContent = "Sounds";
+  menuMain.classList.add("hidden");
+  soundsPage.classList.remove("hidden");
+  refreshSoundsPage();
+}
+
+function soundsPageIsOpen() {
+  return soundsPage.classList.contains("hidden") === false;
+}
+
+/* Pushes the current settings onto the controls. Called when the page
+   opens and after anything changes them, so the toggles, the sliders
+   and the numbers beside them can never end up disagreeing. */
+function refreshSoundsPage() {
+  const sfxPercent = Math.round(sound.volume * 100);
+  const musicPercent = Math.round(music.volume * 100);
+
+  sfxToggle.textContent = sound.enabled === true ? "SFX: On" : "SFX: Off";
+  sfxSlider.value = String(sfxPercent);
+  sfxReadout.textContent = sfxPercent + "%";
+  setChannelMuted(sfxGroup, sound.enabled === false);
+
+  musicToggle.textContent = music.enabled === true ? "Music: On" : "Music: Off";
+  musicSlider.value = String(musicPercent);
+  musicReadout.textContent = musicPercent + "%";
+  setChannelMuted(musicGroup, music.enabled === false);
+
+  refreshMusicNote();
+}
+
+function setChannelMuted(group, muted) {
+  if (muted === true) {
+    group.classList.add("off");
+  } else {
+    group.classList.remove("off");
+  }
+}
+
+function refreshMusicNote() {
+  if (music.fileFailed === false) {
+    musicNote.classList.add("hidden");
+    return;
+  }
+
+  musicNote.textContent = "The music file would not load, so the game is running " +
+    "without it. Opening the game from a web address instead of a file on the " +
+    "device usually fixes it.";
+  musicNote.classList.remove("hidden");
+}
+
+function openMenu() {
+  if (game.phase === "title") return;
+  if (overlay.classList.contains("hidden") === false) return;
+
+  ensureAudio();
+  showMenuMain();
+  menuFull.textContent = document.fullscreenElement === null ? "Fullscreen" : "Leave Fullscreen";
+  menuFull.style.display = fullscreenSupported === true ? "block" : "none";
+  menuPanel.classList.remove("hidden");
+}
+
+function closeMenu() {
+  menuPanel.classList.add("hidden");
+  showMenuMain();
+}
+
+function toggleMenu() {
+  if (menuIsOpen() === true) {
+    closeMenu();
+  } else {
+    openMenu();
+  }
+}
+
+menuBtn.addEventListener("click", toggleMenu);
+menuResume.addEventListener("click", closeMenu);
+
+menuSounds.addEventListener("click", showSoundsPage);
+soundsBack.addEventListener("click", showMenuMain);
+
+sfxToggle.addEventListener("click", function () {
+  sound.enabled = sound.enabled === false;
+  refreshSoundsPage();
+  saveAudioSettings();
+
+  /* Switching effects back on plays one, so the player hears the level
+     they are set to instead of taking the label's word for it. */
+  if (sound.enabled === true) playTone(660, 0.12, "triangle", 0.14);
+});
+
+sfxSlider.addEventListener("input", function () {
+  sound.volume = Number(sfxSlider.value) / 100;
+  sfxReadout.textContent = sfxSlider.value + "%";
+  applySfxVolume();
+});
+
+/* The sample tone and the write to storage both wait for the finger to
+   come off. A drag fires input on every pixel it crosses, and neither
+   a burst of beeps nor a burst of writes is wanted. */
+sfxSlider.addEventListener("change", function () {
+  saveAudioSettings();
+  if (sound.enabled === true) playTone(660, 0.12, "triangle", 0.14);
+});
+
+musicToggle.addEventListener("click", function () {
+  music.enabled = music.enabled === false;
+  refreshSoundsPage();
+  saveAudioSettings();
+
+  /* Switching music off stops the track outright and switching it back
+     on starts whatever the level asked for. With nothing wanted, which
+     is the case on the title card, both do nothing. */
+  syncMusic();
+});
+
+musicSlider.addEventListener("input", function () {
+  music.volume = Number(musicSlider.value) / 100;
+  musicReadout.textContent = musicSlider.value + "%";
+  applyMusicVolume();
+});
+
+musicSlider.addEventListener("change", saveAudioSettings);
+
+menuFull.addEventListener("click", function () {
+  if (document.fullscreenElement === null) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
+  closeMenu();
+});
+
+menuHelp.addEventListener("click", function () {
+  closeMenu();
+  showCard("How to Play", "Prism Path", howToPlayHtml(), "Back", function () { hideCard(); });
+});
+
+menuSave.addEventListener("click", function () {
+  saveGame();
+  closeMenu();
+  showToast("SAVED", "#45e08a");
+});
+
+menuSaveQuit.addEventListener("click", function () {
+  saveGame();
+  closeMenu();
+  stopMusic();
+  game.phase = "title";
+  showTitleCard();
+});
+
+menuQuit.addEventListener("click", function () {
+  clearSave();
+  closeMenu();
+  stopMusic();
+  game.phase = "title";
+  showTitleCard();
+});
+
+/* Escape on a keyboard, the menu button anywhere, and the Android back
+   gesture all reach the same panel. Back needs a history entry of its
+   own to have something to pop. */
+window.addEventListener("keydown", function (event) {
+  if (event.key !== "Escape") return;
+  event.preventDefault();
+  menuBack();
+});
+
+window.history.pushState({ prismPath: true }, "");
+window.addEventListener("popstate", function () {
+  window.history.pushState({ prismPath: true }, "");
+  menuBack();
+});
+
+/* Escape and the back gesture both mean "up one level". Standing in the
+   sounds page, one level up is the main menu. */
+function menuBack() {
+  if (menuIsOpen() === true && soundsPageIsOpen() === true) {
+    showMenuMain();
+    return;
+  }
+  toggleMenu();
+}
+
+const fullscreenSupported = typeof document.documentElement.requestFullscreen === "function";
+
+document.addEventListener("fullscreenchange", function () {
+  window.setTimeout(measureStage, 120);
+});
+
+/* ------------------------------------------------------------------
+   Boot
+   ------------------------------------------------------------------ */
+
+/* The stage can measure zero while the page is still laying out or
+   while the tab is hidden, so the board is built on the first real
+   measurement. */
+let boardReady = false;
+
+function measureStage() {
+  const rect = stage.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return;
+
+  if (boardReady === false) {
+    chooseRowCount(rect);
+    resizeCanvas();
+    buildBoard();
+    game.goal = makeGoalForLevel(1);
+    boardReady = true;
+    refreshHud();
+    return;
+  }
+
+  /* A resize after the run started only rescales. The board itself is
+     left alone. */
+
+  resizeCanvas();
+}
+
+const stageObserver = new ResizeObserver(measureStage);
+stageObserver.observe(stage);
+
+window.addEventListener("orientationchange", function () {
+  window.setTimeout(measureStage, 200);
+});
+
+/* Blocks the pinch-zoom and double tap zoom that ruin drag controls. */
+document.addEventListener("gesturestart", function (event) { event.preventDefault(); });
+document.addEventListener("dblclick", function (event) { event.preventDefault(); });
+
+game.bestScore = loadBest();
+loadAudioSettings();
+refreshSoundsPage();
+buildItemBar();
+measureStage();
+showTitleCard();
+window.requestAnimationFrame(frame);
+
+</script>
+</body>
+</html>
