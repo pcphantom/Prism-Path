@@ -21,11 +21,13 @@
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
 
-    /* The stat boxes and the goal bar are the same height as each
-       other. Their natural height comes out at about 44.7px on the
-       fonts we ship, so this is that rounded up: neither row moves and
-       both are now pinned to the same number. */
-    --hud-box-height: 46px;
+    /* The label sits beside the number rather than above it, so a stat
+       box only has to be tall enough for one line of text. The goal bar
+       carries a 22px icon, so it gets a couple of pixels more. Both are
+       kept as small as their contents allow, because every pixel saved
+       here is a pixel the nine row board gets to use. */
+    --hud-box-height: 30px;
+    --goal-box-height: 32px;
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -68,63 +70,69 @@
     gap: 6px;
   }
 
+  /* Label and number on one line. Moves never needs room for more than
+     two digits and level rarely more than three, so those two are sized
+     to their contents and the score box takes whatever is left. */
   .stat {
-    flex: 1 1 0;
     min-height: var(--hud-box-height);
     background: var(--panel);
     border: 1px solid var(--panel-edge);
     border-radius: 12px;
-    padding: 5px 8px;
+    padding: 4px 7px;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
   }
 
+  #scoreStat { flex: 1 1 0; }
+  #movesStat { flex: 0 0 auto; }
+  #levelStat { flex: 0 0 auto; }
+
   .stat .label {
-    font-size: 10px;
-    letter-spacing: 1.4px;
+    flex: 0 0 auto;
+    font-size: 9px;
+    letter-spacing: 0.4px;
     text-transform: uppercase;
     color: var(--ink-dim);
   }
 
   .stat .value {
-    font-size: 20px;
+    min-width: 0;
+    font-size: 18px;
     font-weight: bold;
-    line-height: 1.1;
+    line-height: 1.15;
     white-space: nowrap;
     overflow: hidden;
-    text-overflow: ellipsis;
+    font-variant-numeric: tabular-nums;
   }
 
-  .stat .value.small { font-size: 15px; }
+  /* The score takes whatever the row has left over. Moves and level are
+     sized to the digits they actually carry, with a ceiling: a number
+     longer than that has its text stepped down by fitValueText so it
+     stays whole and inside the box instead of being cut off. */
+  /* Fixed pixels rather than ch units, because a ch shrinks along with
+     the font and the box would run away from the text it is trying to
+     hold. Moves is sized for two digits, level for three. */
+  #scoreValue { flex: 1 1 auto; }
+  #movesValue { flex: 0 0 auto; min-width: 22px; max-width: 26px; }
+  #levelValue { flex: 0 0 auto; min-width: 22px; max-width: 34px; }
 
   #movesStat.low .value { color: var(--danger); }
 
   /* The level box carries the hint button on its right edge, the way
      the goal bar carries the menu button. The padding moves off the box
      and onto the text beside it, so the button can reach the edges. */
-  /* The level box keeps the padding every stat box has. That matters:
-     the boxes are laid out with flex-basis 0, which puts padding
-     outside the basis, so a box with its padding removed comes out
-     narrower than its neighbours and drags the whole row off the split
-     it has always had. The button escapes the padding with a negative
-     margin instead, which reaches the box edges without touching the
-     layout maths. */
-  #levelStat {
-    display: flex;
-    align-items: stretch;
-  }
-
-  .statBody {
-    flex: 1 1 auto;
-    min-width: 0;
-  }
-
+  /* The button reaches the edges of the level box with a negative
+     margin, so the box keeps the padding every stat box has and the row
+     is laid out exactly as it would be without a button in it. */
   #hintBtn {
     flex: 0 0 auto;
     align-self: stretch;
-    width: 40px;
-    margin: -5px -8px -5px 0;
+    width: 32px;
+    margin: -4px -7px -4px 0;
     padding: 0;
-    font-size: 20px;
+    font-size: 17px;
     font-weight: bold;
     line-height: 1;
     border-radius: 0 11px 11px 0;
@@ -148,7 +156,7 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: var(--hud-box-height);
+    min-height: var(--goal-box-height);
   }
 
   #goalText {
@@ -747,19 +755,17 @@
 
   <div id="hud">
     <div id="topRow">
-      <div class="stat">
-        <div class="label">Score</div>
-        <div class="value" id="scoreValue">0</div>
+      <div class="stat" id="scoreStat">
+        <span class="label">Score:</span>
+        <span class="value" id="scoreValue">0</span>
       </div>
       <div class="stat" id="movesStat">
-        <div class="label">Moves</div>
-        <div class="value" id="movesValue">20</div>
+        <span class="label">Moves:</span>
+        <span class="value" id="movesValue">20</span>
       </div>
       <div class="stat" id="levelStat">
-        <div class="statBody">
-          <div class="label">Level</div>
-          <div class="value" id="levelValue">1</div>
-        </div>
+        <span class="label">Level:</span>
+        <span class="value" id="levelValue">1</span>
         <button id="hintBtn" title="Hint" aria-label="Show a hint">?</button>
       </div>
     </div>
@@ -876,11 +882,12 @@
 
 const COLS = 7;
 
-/* Rows are chosen once at boot so a tall phone gets a taller board
-   and fills the height it has. Everything that could otherwise drift
-   with board size is proportional to it: the stone cap and the blight
-   threshold both scale. */
-let ROWS = 8;
+/* The board is nine rows by seven columns on every screen. The whole
+   difficulty curve is balanced against that number: the stone cap, the
+   blight threshold, the move budget and the goal targets are all tuned
+   for a board this size, so it is fixed and never guessed at from the
+   screen it is being drawn on. */
+const ROWS = 9;
 
 const GEM_COLOURS = [
   { name: "red",    core: "#ff5470", rim: "#ffb3c0", glow: "#ff2f55", shape: "circle"   },
@@ -925,6 +932,20 @@ function blightLossThreshold() {
 function blightCarryCap() {
   return blightLossThreshold() - 3;
 }
+
+/* A blighted gem does not sit still. Every gem counts the moves it has
+   spent infected, and on the third the blight walks to a clean gem
+   beside it and the cell it came from sets as stone. Leaving blight
+   alone therefore costs board rather than costing nothing, and the
+   stone it leaves is the softest there is: one crack and it is gone. */
+const BLIGHT_MOVE_INTERVAL = 3;
+const BLIGHT_STONE_HP = 1;
+
+/* The walk is played out rather than jumped. The stone sets under the
+   blight first, then the blight crawls across to the gem it picked and
+   only shows up there once it has arrived. */
+const BLIGHT_SET_SECONDS = 0.24;
+const BLIGHT_CRAWL_SECONDS = 0.52;
 
 /* One shared meter pays for every item. The differing costs are the
    whole decision: spend small and often, or bank for the big one. */
@@ -978,6 +999,8 @@ function makeGem(colourIndex) {
     colour: colourIndex,
     special: "none",     // "none" | "bomb" | "prism"
     blighted: false,
+    blightAge: 0,        // moves spent infected, counts up to the walk
+    blightShow: 1,       // 1 visible, 0 hidden, below 0 still crawling in
     hp: 0,
     offsetY: 0,          // pixels above its resting place while falling
     fallSpeed: 0,
@@ -996,6 +1019,8 @@ function makeStone(hp) {
     colour: -1,
     special: "none",
     blighted: false,
+    blightAge: 0,
+    blightShow: 1,
     hp: hp,
     maxHp: hp,
     offsetY: 0,
@@ -1037,6 +1062,7 @@ const game = {
 
 const particles = [];
 const floaters = [];
+const blightCrawls = [];
 
 /* The hint helper. delayChosen is the difference between "the player
    has never touched the slider, so the delay follows the level" and
@@ -1555,6 +1581,58 @@ function playStonesShatter() {
 
 /* Every blight cured. It starts as the blight's own sour sawtooth and
    resolves onto a clean bell, so the sound itself is the cure. */
+/* The gem under the blight hardening: a short dull knock with the pitch
+   falling away, which is what a thing setting solid sounds like. */
+function playBlightSet() {
+  playSubDrop(170, 52, 0.22, 0.11);
+  playNoiseHit(0.13);
+}
+
+/* The crawl across. A band of noise sliding up gives the scrape of
+   something dragging itself, and the wavering low tone under it is the
+   creature carrying its own weight. */
+function playBlightCrawl() {
+  playFilteredNoise(BLIGHT_CRAWL_SECONDS, 0.08, "bandpass", 260, 1150);
+
+  if (sound.enabled === false) return;
+  if (sound.ctx === null) return;
+
+  const now = sound.ctx.currentTime;
+  const osc = sound.ctx.createOscillator();
+  const wobble = sound.ctx.createOscillator();
+  const wobbleDepth = sound.ctx.createGain();
+  const gain = sound.ctx.createGain();
+
+  osc.type = "sawtooth";
+  osc.frequency.setValueAtTime(74, now);
+  osc.frequency.linearRampToValueAtTime(102, now + BLIGHT_CRAWL_SECONDS);
+
+  /* A slow warble on the pitch, so the note never sits still. */
+  wobble.type = "sine";
+  wobble.frequency.setValueAtTime(11, now);
+  wobbleDepth.gain.setValueAtTime(7, now);
+  wobble.connect(wobbleDepth);
+  wobbleDepth.connect(osc.frequency);
+
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.075, now + 0.06);
+  gain.gain.exponentialRampToValueAtTime(0.0001, now + BLIGHT_CRAWL_SECONDS);
+
+  osc.connect(gain);
+  gain.connect(soundBus());
+
+  osc.start(now);
+  wobble.start(now);
+  osc.stop(now + BLIGHT_CRAWL_SECONDS + 0.03);
+  wobble.stop(now + BLIGHT_CRAWL_SECONDS + 0.03);
+}
+
+/* Landing on the next gem: a wet little slap. */
+function playBlightLand() {
+  playTone(64, 0.16, "sawtooth", 0.1);
+  playFilteredNoise(0.14, 0.06, "lowpass", 900, 220);
+}
+
 function playBlightPurge() {
   playRisingRun(98, [0, 1], 0.06, 0.3, "sawtooth", 0.11);
   playFilteredNoise(0.5, 0.12, "highpass", 400, 3400);
@@ -1954,6 +2032,7 @@ function startLevel() {
   particles.length = 0;
   floaters.length = 0;
   shockwaves.length = 0;
+  blightCrawls.length = 0;
   screenFlash = null;
   milestoneWord = null;
 
@@ -2018,6 +2097,8 @@ function infectRandomCell() {
 
   const pick = candidates[Math.floor(Math.random() * candidates.length)];
   cellAt(pick.row, pick.col).blighted = true;
+  cellAt(pick.row, pick.col).blightAge = 0;
+  cellAt(pick.row, pick.col).blightShow = 1;
   spawnBlightPuff(pick.row, pick.col);
 }
 
@@ -2058,6 +2139,8 @@ function spreadBlight() {
 
   const pick = targets[Math.floor(Math.random() * targets.length)];
   cellAt(pick.row, pick.col).blighted = true;
+  cellAt(pick.row, pick.col).blightAge = 0;
+  cellAt(pick.row, pick.col).blightShow = 1;
   spawnBlightPuff(pick.row, pick.col);
   playTone(90, 0.3, "sawtooth", 0.09);
 }
@@ -2071,6 +2154,273 @@ function advanceBlight() {
 
   game.movesSinceBlight = 0;
   spreadBlight();
+}
+
+/* Where a blight can walk to: a clean gem straight up, down, left or
+   right of it. Diagonals are left out, the same way spreadBlight leaves
+   them out, so a blight can be walled off by blocking four sides.
+
+   Cells already bursting are no good at either end of the walk. They
+   are on their way off the board, and building a stone on top of one
+   would cancel a clear that is already under way. */
+function blightWalkTargets(spot) {
+  const steps = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+  const targets = [];
+
+  for (let i = 0; i < steps.length; i++) {
+    const row = spot.row + steps[i][0];
+    const col = spot.col + steps[i][1];
+    if (insideBoard(row, col) === false) continue;
+
+    const cell = cellAt(row, col);
+    if (cell.kind !== "gem") continue;
+    if (cell.blighted === true) continue;
+    if (cell.doomed === true) continue;
+
+    targets.push({ row: row, col: col });
+  }
+
+  return targets;
+}
+
+/* Walled in on all four sides, the blight stays where it is and waits
+   for its next turn to come round.
+
+   The board is changed here and now, so nothing downstream has to deal
+   with a blight that is halfway between two cells. What the player sees
+   is a crawl laid over the top: the gem it left sets as stone, the
+   blight travels across, and the gem it is heading for keeps its blight
+   hidden until the crawl lands on it. */
+function moveBlightFrom(spot) {
+  const targets = blightWalkTargets(spot);
+  if (targets.length === 0) return;
+
+  const pick = targets[Math.floor(Math.random() * targets.length)];
+  const next = cellAt(pick.row, pick.col);
+  next.blighted = true;
+  next.blightAge = 0;
+  next.blightShow = -(BLIGHT_SET_SECONDS + BLIGHT_CRAWL_SECONDS);
+
+  const stone = makeStone(BLIGHT_STONE_HP);
+  game.board[spot.row][spot.col] = stone;
+
+  spawnBlightCrawl(stone, next);
+  spawnStoneSetRing(spot.row, spot.col);
+  playBlightSet();
+}
+
+/* One blight on its way from the gem it turned to stone to the gem it
+   picked. Both ends are held as cell objects because gravity can drop
+   them into different rows while the crawl is still playing, and the
+   blob has to land where the blight actually ended up. */
+function spawnBlightCrawl(fromCell, toCell) {
+  blightCrawls.push({
+    fromCell: fromCell,
+    toCell: toCell,
+    age: 0,
+    trailTimer: 0,
+    crawlSoundPlayed: false,
+    landed: false
+  });
+}
+
+/* Where a cell object is sitting on the board right now. */
+function findCellSpot(target) {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (game.board[row][col] === target) return { row: row, col: col };
+    }
+  }
+  return null;
+}
+
+/* The point the blob is at, and how far along it is. A lift on the way
+   over turns the slide into a lunge. */
+function blightCrawlPoint(crawl) {
+  const from = findCellSpot(crawl.fromCell);
+  const to = findCellSpot(crawl.toCell);
+  if (from === null || to === null) return null;
+
+  const start = cellCentre(from.row, from.col);
+  const end = cellCentre(to.row, to.col);
+
+  const travelled = crawl.age - BLIGHT_SET_SECONDS;
+  if (travelled <= 0) {
+    return { x: start.x, y: start.y, progress: 0 };
+  }
+
+  let progress = travelled / BLIGHT_CRAWL_SECONDS;
+  if (progress > 1) progress = 1;
+
+  /* Slow off the mark, quick across the middle, settling as it lands. */
+  const eased = progress < 0.5
+    ? 4 * progress * progress * progress
+    : 1 - Math.pow(-2 * progress + 2, 3) / 2;
+
+  const lift = Math.sin(progress * Math.PI) * layout.cell * 0.38;
+
+  return {
+    x: start.x + (end.x - start.x) * eased,
+    y: start.y + (end.y - start.y) * eased - lift,
+    progress: progress
+  };
+}
+
+function updateBlightCrawls(dt) {
+  for (let i = blightCrawls.length - 1; i >= 0; i--) {
+    const crawl = blightCrawls[i];
+    crawl.age += dt;
+
+    const point = blightCrawlPoint(crawl);
+
+    /* One end of the crawl left the board, so there is nothing left to
+       draw a journey between. */
+    if (point === null) {
+      blightCrawls.splice(i, 1);
+      continue;
+    }
+
+    if (crawl.crawlSoundPlayed === false && crawl.age >= BLIGHT_SET_SECONDS) {
+      crawl.crawlSoundPlayed = true;
+      playBlightCrawl();
+    }
+
+    /* Grit shed along the way, so the trail reads as something dragging
+       itself across rather than a shape sliding. */
+    if (point.progress > 0 && point.progress < 1) {
+      crawl.trailTimer -= dt;
+      if (crawl.trailTimer <= 0) {
+        crawl.trailTimer = 0.04;
+        spawnBlightTrail(point.x, point.y);
+      }
+    }
+
+    if (crawl.landed === false && point.progress >= 1) {
+      crawl.landed = true;
+      playBlightLand();
+      const spot = findCellSpot(crawl.toCell);
+      if (spot !== null) spawnBlightPuff(spot.row, spot.col);
+    }
+
+    if (crawl.age >= BLIGHT_SET_SECONDS + BLIGHT_CRAWL_SECONDS) {
+      blightCrawls.splice(i, 1);
+    }
+  }
+}
+
+function spawnBlightTrail(x, y) {
+  for (let i = 0; i < 2; i++) {
+    particles.push({
+      x: x + (Math.random() * 2 - 1) * layout.cell * 0.12,
+      y: y + (Math.random() * 2 - 1) * layout.cell * 0.12,
+      vx: (Math.random() * 2 - 1) * 26,
+      vy: 18 + Math.random() * 26,
+      life: 0.28 + Math.random() * 0.2,
+      maxLife: 0.48,
+      size: layout.cell * 0.09,
+      colour: "#4a1f66",
+      gravity: 60,
+      delay: 0
+    });
+  }
+}
+
+/* Dust kicked out as the stone sets, so the gem hardening reads as an
+   event and not as a swap. */
+function spawnStoneSetRing(row, col) {
+  const centre = cellCentre(row, col);
+  spawnShockwave(centre.x, centre.y, "#9a92b5", layout.cell * 0.9, 0.34, layout.cell * 0.12, 0);
+
+  for (let i = 0; i < 10; i++) {
+    const angle = (Math.PI * 2 * i) / 10;
+    particles.push({
+      x: centre.x,
+      y: centre.y,
+      vx: Math.cos(angle) * 120,
+      vy: Math.sin(angle) * 120 - 20,
+      life: 0.36,
+      maxLife: 0.36,
+      size: layout.cell * 0.08,
+      colour: "#b8b0cc",
+      gravity: 240,
+      delay: 0
+    });
+  }
+}
+
+/* The blob itself, part way across. Squashed as it launches, drawn out
+   thin over the middle of the leap, and squashed again as it lands. A
+   few ghosts of where it just was give it a smear of speed. */
+function drawBlightCrawls() {
+  for (let i = 0; i < blightCrawls.length; i++) {
+    const crawl = blightCrawls[i];
+    const point = blightCrawlPoint(crawl);
+    if (point === null) continue;
+
+    const radius = layout.cell * 0.38;
+
+    /* Sitting on the gem it is about to leave, gathering itself. */
+    if (point.progress === 0) {
+      const gather = 1 + Math.sin((crawl.age / BLIGHT_SET_SECONDS) * Math.PI) * 0.16;
+      ctx.save();
+      ctx.translate(point.x, point.y);
+      ctx.scale(gather, 2 - gather);
+      drawBlight(0, 0, radius, 1);
+      ctx.restore();
+      continue;
+    }
+
+    for (let ghost = 3; ghost >= 0; ghost--) {
+      const back = { fromCell: crawl.fromCell, toCell: crawl.toCell, age: crawl.age - ghost * 0.045 };
+      const trailPoint = blightCrawlPoint(back);
+      if (trailPoint === null) continue;
+      if (trailPoint.progress <= 0) continue;
+
+      const alpha = ghost === 0 ? 1 : 0.26 - ghost * 0.06;
+      if (alpha <= 0) continue;
+
+      const stretch = 1 + Math.sin(trailPoint.progress * Math.PI) * 0.3;
+
+      ctx.save();
+      ctx.translate(trailPoint.x, trailPoint.y);
+      ctx.scale(stretch, 1 / stretch);
+      drawBlight(0, 0, radius, alpha);
+      ctx.restore();
+    }
+  }
+}
+
+/* Every blighted gem ages by one move, and the ones that reach the
+   interval walk. The standing list is taken before any of them move so
+   that a blight arriving in a fresh cell cannot be aged twice in the
+   same turn. */
+function advanceBlightMoves() {
+  const standing = [];
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.blighted !== true) continue;
+      if (cell.doomed === true) continue;
+      standing.push({ row: row, col: col });
+    }
+  }
+
+  for (let i = 0; i < standing.length; i++) {
+    const spot = standing[i];
+    const cell = cellAt(spot.row, spot.col);
+
+    /* Another blight may have walked into this cell since the list was
+       taken, which resets its count and is not this one's turn. */
+    if (cell.blighted !== true) continue;
+    if (cell.doomed === true) continue;
+
+    cell.blightAge++;
+    if (cell.blightAge < BLIGHT_MOVE_INTERVAL) continue;
+
+    cell.blightAge = 0;
+    moveBlightFrom(spot);
+  }
 }
 
 /* ------------------------------------------------------------------
@@ -2258,9 +2608,22 @@ function beginPath(row, col) {
 
 function extendPath(row, col) {
   if (game.path.length === 0) return;
-  if (game.loopClosed === true) return;
 
   const head = game.path[game.path.length - 1];
+
+  /* A closed ring backs out the same way every other step does, by
+     moving onto the gem the link came from. Closing the ring leaves the
+     finger on the gem the link started on without adding it to the
+     trail, so the gem it came from is the head. The ring opens again
+     and the link carries on from there. */
+  if (game.loopClosed === true) {
+    if (head.row === row && head.col === col) {
+      game.loopClosed = false;
+      playTone(220, 0.08, "sine", 0.08);
+    }
+    return;
+  }
+
   if (head.row === row && head.col === col) return;
 
   const candidate = { row: row, col: col };
@@ -2602,6 +2965,7 @@ function resolvePath() {
   game.loopClosed = false;
 
   advanceBlight();
+  advanceBlightMoves();
   refreshHud();
 }
 
@@ -4062,6 +4426,7 @@ function serialiseBoard() {
         c: cell.colour,
         s: cell.special,
         b: cell.blighted === true ? 1 : 0,
+        a: cell.blightAge,
         h: cell.hp,
         m: cell.kind === "stone" ? cell.maxHp : 0
       });
@@ -4089,6 +4454,8 @@ function restoreBoard(flat) {
         cell.special = saved.s;
       }
       cell.blighted = saved.b === 1;
+      cell.blightAge = saved.a;
+      cell.blightShow = 1;
       cell.scale = 1;
       line.push(cell);
     }
@@ -4121,7 +4488,7 @@ function saveGame() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 1,
+    version: 2,
     rows: ROWS,
     cols: COLS,
     level: game.level,
@@ -4146,7 +4513,7 @@ function readSave() {
   if (raw === null) return null;
 
   const payload = JSON.parse(raw);
-  if (payload.version !== 1) return null;
+  if (payload.version !== 2) return null;
 
   /* A save made on a differently shaped board cannot be restored onto
      this one, so it is treated as absent. */
@@ -4171,6 +4538,7 @@ function loadGame(payload) {
   game.aiming = "none";
   particles.length = 0;
   floaters.length = 0;
+  blightCrawls.length = 0;
 
   restoreBoard(payload.board);
   clearHint();
@@ -5160,13 +5528,6 @@ function drawMilestoneWord(paint, boardWidth, boardHeight, pixelRatio) {
    Drawing
    ------------------------------------------------------------------ */
 
-function chooseRowCount(rect) {
-  const cellByWidth = Math.floor(rect.width / COLS);
-  const rowsThatFit = Math.floor(rect.height / cellByWidth);
-
-  ROWS = Math.max(8, Math.min(12, rowsThatFit));
-}
-
 function resizeCanvas() {
   const rect = stage.getBoundingClientRect();
   const dpr = window.devicePixelRatio;
@@ -5368,8 +5729,8 @@ function drawGem(cell, cx, cy, radius) {
   if (cell.special === "prism") {
     drawPrismMarks(cx, cy, radius);
   }
-  if (cell.blighted === true) {
-    drawBlight(cx, cy, radius);
+  if (cell.blighted === true && cell.blightShow > 0) {
+    drawBlight(cx, cy, radius, cell.blightShow);
   }
 
   ctx.restore();
@@ -5491,8 +5852,11 @@ function drawPrismMarks(cx, cy, radius) {
   ctx.fill();
 }
 
-function drawBlight(cx, cy, radius) {
+function drawBlight(cx, cy, radius, alpha) {
   const wobble = Math.sin(game.time * 3) * radius * 0.05;
+
+  ctx.save();
+  ctx.globalAlpha = ctx.globalAlpha * alpha;
 
   ctx.beginPath();
   for (let i = 0; i < 12; i++) {
@@ -5524,6 +5888,8 @@ function drawBlight(cx, cy, radius) {
   ctx.beginPath();
   ctx.arc(cx + radius * 0.24, cy - radius * 0.05, radius * 0.1, 0, Math.PI * 2);
   ctx.fill();
+
+  ctx.restore();
 }
 
 function drawCells() {
@@ -6040,6 +6406,7 @@ function render() {
   drawLoopInteriorGlow();
   drawCells();
   drawShockwaves();
+  drawBlightCrawls();
   drawHint();
   drawPath();
   drawParticles();
@@ -6084,6 +6451,7 @@ function update(dt) {
 
   updateParticles(dt);
   updateShockwaves(dt);
+  updateBlightCrawls(dt);
   updateToast(dt);
   updateMilestoneWord(dt);
   updateCellAnimations(dt);
@@ -6125,6 +6493,16 @@ function updateCellAnimations(dt) {
           cell.fallSpeed = 0;
           cell.scale = 1.16;
         }
+      }
+
+      /* A blight that is still crawling over counts its arrival down
+         below zero, then fades in once the blob lands on it. */
+      if (cell.blightShow < 0) {
+        cell.blightShow += dt;
+        if (cell.blightShow > 0) cell.blightShow = 0;
+      } else if (cell.blightShow < 1) {
+        cell.blightShow += dt * 7;
+        if (cell.blightShow > 1) cell.blightShow = 1;
       }
 
       if (cell.scale > 1) {
@@ -6261,10 +6639,29 @@ function renderGoalLine() {
   }
 }
 
+/* Steps a number's font down until it fits the width its box gives it.
+   Four digit levels and seven figure scores are the cases that need it:
+   the number stays whole and readable instead of being cut off. */
+function fitValueText(element, maxFontSize) {
+  element.style.fontSize = maxFontSize + "px";
+
+  let size = maxFontSize;
+  while (size > 9 && element.scrollWidth > element.clientWidth) {
+    size--;
+    element.style.fontSize = size + "px";
+  }
+}
+
+const STAT_FONT_SIZE = 18;
+
 function refreshHud() {
   scoreValue.textContent = String(game.score);
   movesValue.textContent = String(Math.max(0, game.moves));
   levelValue.textContent = String(game.level);
+
+  fitValueText(scoreValue, STAT_FONT_SIZE);
+  fitValueText(movesValue, STAT_FONT_SIZE);
+  fitValueText(levelValue, STAT_FONT_SIZE);
 
   if (game.moves <= 4) {
     movesStat.classList.add("low");
@@ -6819,7 +7216,6 @@ function measureStage() {
   if (rect.width < 1 || rect.height < 1) return;
 
   if (boardReady === false) {
-    chooseRowCount(rect);
     resizeCanvas();
     buildBoard();
     game.goal = makeGoalForLevel(1);
