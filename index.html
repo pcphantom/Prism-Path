@@ -20,6 +20,12 @@
     --good: #45e08a;
     --safe-top: env(safe-area-inset-top, 0px);
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+    /* The stat boxes and the goal bar are the same height as each
+       other. Their natural height comes out at about 44.7px on the
+       fonts we ship, so this is that rounded up: neither row moves and
+       both are now pinned to the same number. */
+    --hud-box-height: 46px;
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -64,6 +70,7 @@
 
   .stat {
     flex: 1 1 0;
+    min-height: var(--hud-box-height);
     background: var(--panel);
     border: 1px solid var(--panel-edge);
     border-radius: 12px;
@@ -91,6 +98,8 @@
 
   #movesStat.low .value { color: var(--danger); }
 
+  /* Same height as the stat boxes above, so the top of the screen
+     reads as one block. */
   #goalBar {
     background: var(--panel);
     border: 1px solid var(--panel-edge);
@@ -99,20 +108,33 @@
     display: flex;
     align-items: center;
     gap: 10px;
-    min-height: 44px;
+    min-height: var(--hud-box-height);
   }
 
   #goalText {
-    font-size: 13px;
+    font-size: 15px;
     flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+
+    /* The icon sits on the text baseline row, so the line has to be
+       tall enough to hold it without the bar growing. */
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* The gem or stone the goal is asking for, drawn by the board's own
+     code. Never squashed by the flex row it sits in. */
+  .goalIcon {
+    flex: 0 0 auto;
+    display: block;
   }
 
   #goalCount {
-    font-size: 13px;
+    font-size: 15px;
     font-weight: bold;
     color: var(--accent);
     flex: 0 0 auto;
@@ -320,9 +342,17 @@
 
   #menuPanel.hidden { display: none; }
 
+  /* Same rule as the card: never taller than the space it is in, and
+     scrolls when the list does not fit. Seven items on a short phone
+     would otherwise run off the bottom. */
   #menuCard {
     width: 100%;
     max-width: 300px;
+    max-height: 100%;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
     background: linear-gradient(160deg, rgba(40, 28, 74, 0.96), rgba(18, 12, 34, 0.96));
     border: 1px solid var(--panel-edge);
     border-radius: 18px;
@@ -481,15 +511,34 @@
 
   #overlay.hidden { display: none; }
 
+  /* The card is never taller than the space it sits in. Anything that
+     does not fit scrolls inside it, so a long rules list can never push
+     the buttons off the bottom of a phone screen. */
   #card {
     width: 100%;
     max-width: 340px;
+    max-height: 100%;
+    display: flex;
+    flex-direction: column;
     background: linear-gradient(160deg, rgba(40, 28, 74, 0.96), rgba(18, 12, 34, 0.96));
     border: 1px solid var(--panel-edge);
     border-radius: 18px;
     padding: 20px 18px;
     text-align: center;
     box-shadow: 0 18px 50px rgba(0, 0, 0, 0.6);
+
+    /* On a screen too short even for the shrunk down regions inside,
+       the whole card scrolls. A landscape phone leaves the stage about
+       180px tall, which is the case that needs this. */
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Everything except the scrolling middle keeps its natural height. */
+  #cardTitle, #cardSub, #cardStats, #cardBtn, #cardBtnAlt {
+    flex: 0 0 auto;
   }
 
   #cardTitle {
@@ -514,6 +563,26 @@
     text-align: left;
     color: #d9d2f2;
     margin-bottom: 16px;
+
+    /* The scrolling middle. min-height lets it shrink below its content
+       so overflow-y actually has something to do. */
+    flex: 1 1 auto;
+    min-height: 90px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+
+    /* The page switches touch gestures off so drags on the board read
+       cleanly. Vertical dragging has to be handed back here, or the
+       rules cannot be scrolled with a finger. */
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* The title card carries no body text, so it pays for neither the gap
+     under one nor the floor that keeps one readable. */
+  #cardBody:empty {
+    min-height: 0;
+    margin-bottom: 0;
   }
 
   #cardBody b { color: #fff; }
@@ -534,6 +603,42 @@
     width: 100%;
     padding: 13px;
     font-size: 16px;
+    font-weight: bold;
+    background: linear-gradient(90deg, #7c5cff, #b07cff);
+    border-color: transparent;
+  }
+
+  #cardBtn.hidden { display: none; }
+
+  /* The front page is a list of destinations, so it gets its own stack
+     of buttons in place of the one or two the other cards need. Tall
+     targets with a real gap between them, so a thumb cannot start a new
+     run while reaching for the rules. */
+  #cardMenu {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+
+    /* Shrinks and scrolls only when the screen is too short to hold the
+       whole list, and never below about three buttons. */
+    flex: 0 1 auto;
+    min-height: 160px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  #cardMenu.hidden { display: none; }
+
+  .cardMenuItem {
+    width: 100%;
+    padding: 15px 10px;
+    font-size: 16px;
+    letter-spacing: 0.8px;
+  }
+
+  .cardMenuItem.primary {
     font-weight: bold;
     background: linear-gradient(90deg, #7c5cff, #b07cff);
     border-color: transparent;
@@ -654,6 +759,7 @@
           <div><div class="n" id="bestScore">0</div><div class="k">Best</div></div>
         </div>
         <div id="cardBody"></div>
+        <div id="cardMenu" class="hidden"></div>
         <button id="cardBtn"></button>
         <button id="cardBtnAlt" class="hidden"></button>
       </div>
@@ -846,7 +952,7 @@ const floaters = [];
    ------------------------------------------------------------------ */
 
 const canvas = document.getElementById("board");
-const ctx = canvas.getContext("2d");
+let ctx = canvas.getContext("2d");
 const stage = document.getElementById("stage");
 const scoreValue = document.getElementById("scoreValue");
 const movesValue = document.getElementById("movesValue");
@@ -859,6 +965,7 @@ const overlay = document.getElementById("overlay");
 const cardTitle = document.getElementById("cardTitle");
 const cardSub = document.getElementById("cardSub");
 const cardBody = document.getElementById("cardBody");
+const cardMenu = document.getElementById("cardMenu");
 const cardBtn = document.getElementById("cardBtn");
 const cardStats = document.getElementById("cardStats");
 const finalScoreEl = document.getElementById("finalScore");
@@ -1643,7 +1750,7 @@ function makeGoalForLevel(level) {
       colour: colour,
       target: target,
       progress: 0,
-      label: "Burst " + target + " " + GEM_COLOURS[colour].name + " gems"
+      label: "Burst " + target
     };
   }
 
@@ -1664,7 +1771,7 @@ function makeGoalForLevel(level) {
     colour: -1,
     target: target,
     progress: 0,
-    label: "Shatter " + target + " stones"
+    label: "Shatter " + target
   };
 }
 
@@ -4193,26 +4300,33 @@ function drawStone(cell, cx, cy, radius) {
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  /* One crack mark per hit taken, so a tough stone reads as tough. */
-  ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
-  ctx.lineWidth = Math.max(1.6, radius * 0.1);
+  /* Two or more hits left is written on the stone as a number. Counting
+     crack marks is guesswork, and a number cannot be misread. The last
+     hit is the exception: it shows the damage instead, so a stone about
+     to go looks like one. */
+  const showsCount = cell.hp >= 2;
 
-  const crackPaths = [
-    [[-0.30, -0.26], [-0.05,  0.00], [-0.18,  0.30]],
-    [[ 0.32, -0.30], [ 0.08,  0.05], [ 0.30,  0.32]],
-    [[-0.30,  0.32], [-0.02,  0.18], [ 0.22,  0.34]],
-    [[-0.32, -0.06], [ 0.00, -0.20], [ 0.30, -0.10]],
-    [[-0.10, -0.34], [ 0.04, -0.06], [-0.06,  0.30]]
-  ];
+  if (showsCount === false) {
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.55)";
+    ctx.lineWidth = Math.max(1.6, radius * 0.1);
 
-  const cracks = Math.min(crackPaths.length, cell.maxHp - cell.hp);
-  for (let i = 0; i < cracks; i++) {
-    const points = crackPaths[i];
-    ctx.beginPath();
-    ctx.moveTo(points[0][0] * size, points[0][1] * size);
-    ctx.lineTo(points[1][0] * size, points[1][1] * size);
-    ctx.lineTo(points[2][0] * size, points[2][1] * size);
-    ctx.stroke();
+    const crackPaths = [
+      [[-0.30, -0.26], [-0.05,  0.00], [-0.18,  0.30]],
+      [[ 0.32, -0.30], [ 0.08,  0.05], [ 0.30,  0.32]],
+      [[-0.30,  0.32], [-0.02,  0.18], [ 0.22,  0.34]],
+      [[-0.32, -0.06], [ 0.00, -0.20], [ 0.30, -0.10]],
+      [[-0.10, -0.34], [ 0.04, -0.06], [-0.06,  0.30]]
+    ];
+
+    const cracks = Math.min(crackPaths.length, cell.maxHp - cell.hp);
+    for (let i = 0; i < cracks; i++) {
+      const points = crackPaths[i];
+      ctx.beginPath();
+      ctx.moveTo(points[0][0] * size, points[0][1] * size);
+      ctx.lineTo(points[1][0] * size, points[1][1] * size);
+      ctx.lineTo(points[2][0] * size, points[2][1] * size);
+      ctx.stroke();
+    }
   }
 
   /* Tough stones get a brighter rim so you can tell at a glance that
@@ -4224,9 +4338,7 @@ function drawStone(cell, cx, cy, radius) {
     ctx.stroke();
   }
 
-  /* Past three hit points the cracks stop being countable, so the hits
-     remaining are written on the stone instead. */
-  if (cell.maxHp > 3) {
+  if (showsCount === true) {
     ctx.font = "bold " + Math.round(radius * 0.85) + "px Trebuchet MS, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -4281,6 +4393,79 @@ function drawGem(cell, cx, cy, radius) {
   }
 
   ctx.restore();
+}
+
+/* ------------------------------------------------------------------
+   Goal line icons
+
+   The goal used to name its target in words: "Burst 15 amber gems".
+   That asks the player to agree with us about what amber is, and to be
+   able to tell it from red in the first place. The gem itself is drawn
+   into the line instead, so the shape and the colour both say which
+   piece to go for and neither has to be read.
+
+   These are the board's own routines painting into a small canvas, so
+   an icon is the same picture as the thing sitting on the board. Those
+   routines paint through the module level ctx, so it is pointed at the
+   icon canvas for one synchronous call and put straight back. Nothing
+   else runs in between.
+   ------------------------------------------------------------------ */
+
+const GOAL_ICON_PIXELS = 22;
+
+/* Built once each and kept. The key carries the pixel ratio so moving
+   the window to a different screen redraws them sharp. */
+const goalIcons = new Map();
+
+function buildGoalIcon(paint) {
+  const dpr = window.devicePixelRatio;
+  const iconCanvas = document.createElement("canvas");
+
+  iconCanvas.className = "goalIcon";
+  iconCanvas.width = Math.round(GOAL_ICON_PIXELS * dpr);
+  iconCanvas.height = Math.round(GOAL_ICON_PIXELS * dpr);
+  iconCanvas.style.width = GOAL_ICON_PIXELS + "px";
+  iconCanvas.style.height = GOAL_ICON_PIXELS + "px";
+
+  const boardCtx = ctx;
+  ctx = iconCanvas.getContext("2d");
+  ctx.scale(dpr, dpr);
+
+  /* The board draws a gem at 0.38 of a cell across. The icon holds the
+     same proportion against its own box, with the remainder left for
+     the glow and for the shapes that reach past their radius. */
+  const centre = GOAL_ICON_PIXELS / 2;
+  paint(centre, centre, GOAL_ICON_PIXELS * 0.33);
+
+  ctx = boardCtx;
+  return iconCanvas;
+}
+
+function goalGemIcon(colour) {
+  const key = "gem:" + colour + ":" + window.devicePixelRatio;
+  const cached = goalIcons.get(key);
+  if (cached !== undefined) return cached;
+
+  /* A gem at rest: no spin, no bomb or prism marks, no blight. */
+  const sample = { colour: colour, spin: 0, special: "none", blighted: false };
+  const icon = buildGoalIcon(function (x, y, radius) { drawGem(sample, x, y, radius); });
+
+  goalIcons.set(key, icon);
+  return icon;
+}
+
+function goalStoneIcon() {
+  const key = "stone:" + window.devicePixelRatio;
+  const cached = goalIcons.get(key);
+  if (cached !== undefined) return cached;
+
+  /* A whole stone. One hit point leaves it with no cracks and no number
+     written on it, which is what a plain symbol wants. */
+  const sample = { hp: 1, maxHp: 1 };
+  const icon = buildGoalIcon(function (x, y, radius) { drawStone(sample, x, y, radius); });
+
+  goalIcons.set(key, icon);
+  return icon;
 }
 
 function drawBombMarks(cx, cy, radius) {
@@ -4889,6 +5074,22 @@ canvas.addEventListener("contextmenu", function (event) { event.preventDefault()
    HUD updates
    ------------------------------------------------------------------ */
 
+/* The goal line is built as nodes rather than a string, because the
+   piece it names is a picture. A score goal has nothing to picture, so
+   it stays as words. */
+function renderGoalLine() {
+  goalText.textContent = game.goal.label;
+
+  if (game.goal.kind === "colour") {
+    goalText.appendChild(goalGemIcon(game.goal.colour));
+    return;
+  }
+
+  if (game.goal.kind === "stone") {
+    goalText.appendChild(goalStoneIcon());
+  }
+}
+
 function refreshHud() {
   scoreValue.textContent = String(game.score);
   movesValue.textContent = String(Math.max(0, game.moves));
@@ -4900,7 +5101,7 @@ function refreshHud() {
     movesStat.classList.remove("low");
   }
 
-  goalText.textContent = game.goal.label;
+  renderGoalLine();
 
   const shown = Math.min(game.goal.progress, game.goal.target);
   goalCount.textContent = shown + "/" + game.goal.target;
@@ -4984,8 +5185,15 @@ function showCard(title, subtitle, bodyHtml, buttonText, action, altText, altAct
   cardTitle.textContent = title;
   cardSub.textContent = subtitle;
   cardBody.innerHTML = bodyHtml;
+
+  cardMenu.classList.add("hidden");
+  cardBtn.classList.remove("hidden");
   cardBtn.textContent = buttonText;
   cardAction = action;
+
+  /* A card always opens at the top of its text, however far the last
+     one that used this element had been scrolled. */
+  cardBody.scrollTop = 0;
 
   if (altText === undefined) {
     cardAltAction = null;
@@ -5004,6 +5212,51 @@ function hideCard() {
   cardAction = null;
   cardAltAction = null;
   cardBtnAlt.classList.add("hidden");
+  cardMenu.classList.add("hidden");
+}
+
+/* The front page needs a stack of destinations where the other cards
+   need one button and sometimes a second. Entries are
+   { label, action, primary }, and the primary one is the coloured
+   button at the top. */
+function showCardMenu(title, subtitle, bodyHtml, entries) {
+  cardTitle.textContent = title;
+  cardSub.textContent = subtitle;
+  cardBody.innerHTML = bodyHtml;
+
+  cardAction = null;
+  cardAltAction = null;
+  cardBtn.classList.add("hidden");
+  cardBtnAlt.classList.add("hidden");
+
+  cardMenu.innerHTML = "";
+
+  for (let i = 0; i < entries.length; i++) {
+    const entry = entries[i];
+    const button = document.createElement("button");
+
+    button.className = entry.primary === true ? "cardMenuItem primary" : "cardMenuItem";
+    button.textContent = entry.label;
+
+    button.addEventListener("click", function () {
+      /* The same two things the single button does before it acts: the
+         audio context wants a real gesture to start on, and the board
+         may still be waiting for its first measurement. */
+      ensureAudio();
+      if (boardReady === false) {
+        measureStage();
+      }
+      entry.action();
+    });
+
+    cardMenu.appendChild(button);
+  }
+
+  cardBody.scrollTop = 0;
+  cardMenu.scrollTop = 0;
+
+  cardMenu.classList.remove("hidden");
+  overlay.classList.remove("hidden");
 }
 
 cardBtn.addEventListener("click", function () {
@@ -5048,29 +5301,52 @@ function storageWarningHtml() {
     "file on the device fixes it.</span></div>";
 }
 
+/* The rules are long, and putting them on the front page pushed the
+   buttons off the bottom of a phone. They live behind their own card
+   now, and the front page is just the way in. */
+function showHowToPlayCard() {
+  showCard("How to Play", "Prism Path", howToPlayHtml(), "Back", showTitleCard);
+}
+
 function showTitleCard() {
   cardStats.style.display = "none";
 
   const saved = readSave();
+  const entries = [];
 
   if (saved === null) {
-    showCard("Prism Path", "Link. Loop. Purge the blight.",
-      storageWarningHtml() + howToPlayHtml(), "Play",
-      function () { startRun(); hideCard(); });
-    return;
+    entries.push({
+      label: "Play Game",
+      primary: true,
+      action: function () { startRun(); hideCard(); }
+    });
+  } else {
+    entries.push({
+      label: "Continue",
+      primary: true,
+      action: function () { loadGame(saved); hideCard(); }
+    });
+    entries.push({
+      label: "New Game",
+      action: function () { clearSave(); startRun(); hideCard(); }
+    });
   }
 
-  showCard(
-    "Prism Path",
-    "You have a run in progress.",
-    storageWarningHtml() +
-    "<div class='rule'><span class='pip'>&#9670;</span><span>Saved on <b>level " + saved.level + "</b> with <b>" + saved.score + "</b> points and <b>" + saved.continues + "</b> continues.</span></div>" +
-    howToPlayHtml(),
-    "Resume Level " + saved.level,
-    function () { loadGame(saved); hideCard(); },
-    "New Run",
-    function () { clearSave(); startRun(); hideCard(); }
-  );
+  entries.push({ label: "Settings", action: openSoundsFromTitle });
+  entries.push({ label: "How to Play", action: showHowToPlayCard });
+
+  if (fullscreenSupported === true) {
+    entries.push({
+      label: document.fullscreenElement === null ? "Fullscreen" : "Leave Fullscreen",
+      action: toggleFullscreen
+    });
+  }
+
+  const subtitle = saved === null
+    ? "Link. Loop. Purge the blight."
+    : "Saved on level " + saved.level + " with " + saved.score + " points.";
+
+  showCardMenu("Prism Path", subtitle, storageWarningHtml(), entries);
 }
 
 /* ------------------------------------------------------------------
@@ -5090,11 +5366,40 @@ function showMenuMain() {
   menuMain.classList.remove("hidden");
 }
 
-function showSoundsPage() {
+/* Where Back leads out of the sounds page. The pause menu and the front
+   page both open it, and each needs its own way out. */
+let soundsReturnsTo = "menu";
+
+function showSoundsPage(returnTo) {
+  soundsReturnsTo = returnTo;
   menuTitle.textContent = "Sounds";
   menuMain.classList.add("hidden");
   soundsPage.classList.remove("hidden");
   refreshSoundsPage();
+}
+
+function leaveSoundsPage() {
+  if (soundsReturnsTo === "title") {
+    menuPanel.classList.add("hidden");
+    return;
+  }
+  showMenuMain();
+}
+
+/* The front page reaches the same sounds panel the pause menu uses, so
+   there is one set of controls wired up in one place. The panel sits on
+   a layer above the card, and Back drops it again. */
+function openSoundsFromTitle() {
+  showSoundsPage("title");
+  menuPanel.classList.remove("hidden");
+}
+
+function toggleFullscreen() {
+  if (document.fullscreenElement === null) {
+    document.documentElement.requestFullscreen();
+  } else {
+    document.exitFullscreen();
+  }
 }
 
 function soundsPageIsOpen() {
@@ -5168,8 +5473,8 @@ function toggleMenu() {
 menuBtn.addEventListener("click", toggleMenu);
 menuResume.addEventListener("click", closeMenu);
 
-menuSounds.addEventListener("click", showSoundsPage);
-soundsBack.addEventListener("click", showMenuMain);
+menuSounds.addEventListener("click", function () { showSoundsPage("menu"); });
+soundsBack.addEventListener("click", leaveSoundsPage);
 
 sfxToggle.addEventListener("click", function () {
   sound.enabled = sound.enabled === false;
@@ -5215,11 +5520,7 @@ musicSlider.addEventListener("input", function () {
 musicSlider.addEventListener("change", saveAudioSettings);
 
 menuFull.addEventListener("click", function () {
-  if (document.fullscreenElement === null) {
-    document.documentElement.requestFullscreen();
-  } else {
-    document.exitFullscreen();
-  }
+  toggleFullscreen();
   closeMenu();
 });
 
@@ -5269,7 +5570,7 @@ window.addEventListener("popstate", function () {
    sounds page, one level up is the main menu. */
 function menuBack() {
   if (menuIsOpen() === true && soundsPageIsOpen() === true) {
-    showMenuMain();
+    leaveSoundsPage();
     return;
   }
   toggleMenu();
@@ -5279,6 +5580,10 @@ const fullscreenSupported = typeof document.documentElement.requestFullscreen ==
 
 document.addEventListener("fullscreenchange", function () {
   window.setTimeout(measureStage, 120);
+
+  if (game.phase === "title") {
+    showTitleCard();
+  }
 });
 
 /* ------------------------------------------------------------------
