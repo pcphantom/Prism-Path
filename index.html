@@ -26,8 +26,13 @@
        carries a 22px icon, so it gets a couple of pixels more. Both are
        kept as small as their contents allow, because every pixel saved
        here is a pixel the nine row board gets to use. */
-    --hud-box-height: 30px;
-    --goal-box-height: 32px;
+    /* The roomy layout, with the label sitting above the number. This is
+       what the top of the screen wants to be, and on most phones there
+       is height going spare to pay for it. chooseHudSize drops to the
+       compact set below only when keeping this one would cost the board
+       a row's worth of cell size. */
+    --hud-box-height: 46px;
+    --goal-box-height: 46px;
   }
 
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -70,55 +75,98 @@
     gap: 6px;
   }
 
-  /* Label and number on one line. Moves never needs room for more than
-     two digits and level rarely more than three, so those two are sized
-     to their contents and the score box takes whatever is left. */
+  /* Roomy layout: the three boxes split the row evenly and each stacks
+     its label above its number. */
   .stat {
+    flex: 1 1 0;
     min-height: var(--hud-box-height);
     background: var(--panel);
     border: 1px solid var(--panel-edge);
     border-radius: 12px;
-    padding: 4px 7px;
+    padding: 5px 8px;
     min-width: 0;
     display: flex;
-    align-items: center;
-    gap: 4px;
+    align-items: stretch;
   }
 
-  #scoreStat { flex: 1 1 0; }
-  #movesStat { flex: 0 0 auto; }
-  #levelStat { flex: 0 0 auto; }
+  .statBody {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 
   .stat .label {
-    flex: 0 0 auto;
-    font-size: 9px;
-    letter-spacing: 0.4px;
+    display: block;
+    font-size: 10px;
+    letter-spacing: 1.4px;
     text-transform: uppercase;
     color: var(--ink-dim);
   }
 
   .stat .value {
+    display: block;
     min-width: 0;
-    font-size: 18px;
+    font-size: 20px;
     font-weight: bold;
-    line-height: 1.15;
+    line-height: 1.1;
     white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
     font-variant-numeric: tabular-nums;
   }
 
-  /* The score takes whatever the row has left over. Moves and level are
-     sized to the digits they actually carry, with a ceiling: a number
-     longer than that has its text stepped down by fitValueText so it
-     stays whole and inside the box instead of being cut off. */
+  #movesStat.low .value { color: var(--danger); }
+
+  /* ------------------------------------------------- compact HUD */
+
+  /* Worn only when the roomy layout would squeeze the board. Label and
+     number go on one line, which takes 30px off the height of the top of
+     the screen and hands it to the nine rows. Moves never needs room for
+     more than two digits and level rarely more than three, so those two
+     shrink to their contents and the score box takes what is left. */
+  #app.compactHud {
+    --hud-box-height: 30px;
+    --goal-box-height: 32px;
+  }
+
+  #app.compactHud .stat {
+    padding: 4px 7px;
+    align-items: center;
+    gap: 4px;
+  }
+
+  #app.compactHud .statBody {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  #app.compactHud #scoreStat { flex: 1 1 0; }
+  #app.compactHud #movesStat { flex: 0 0 auto; }
+  #app.compactHud #levelStat { flex: 0 0 auto; }
+
+  /* The colon only belongs to the one line reading, so the markup does
+     not carry it. */
+  #app.compactHud .stat .label {
+    display: inline;
+    font-size: 9px;
+    letter-spacing: 0.4px;
+  }
+
+  #app.compactHud .stat .label::after { content: ":"; }
+
+  #app.compactHud .stat .value {
+    display: inline-block;
+    font-size: 18px;
+    line-height: 1.15;
+    text-overflow: clip;
+  }
+
   /* Fixed pixels rather than ch units, because a ch shrinks along with
      the font and the box would run away from the text it is trying to
-     hold. Moves is sized for two digits, level for three. */
-  #scoreValue { flex: 1 1 auto; }
-  #movesValue { flex: 0 0 auto; min-width: 22px; max-width: 26px; }
-  #levelValue { flex: 0 0 auto; min-width: 22px; max-width: 34px; }
-
-  #movesStat.low .value { color: var(--danger); }
+     hold. Anything longer has its text stepped down by fitValueText. */
+  #app.compactHud #scoreValue { flex: 1 1 auto; }
+  #app.compactHud #movesValue { flex: 0 0 auto; min-width: 22px; max-width: 26px; }
+  #app.compactHud #levelValue { flex: 0 0 auto; min-width: 22px; max-width: 34px; }
 
   /* The level box carries the hint button on its right edge, the way
      the goal bar carries the menu button. The padding moves off the box
@@ -129,10 +177,10 @@
   #hintBtn {
     flex: 0 0 auto;
     align-self: stretch;
-    width: 32px;
-    margin: -4px -7px -4px 0;
+    width: 40px;
+    margin: -5px -8px -5px 0;
     padding: 0;
-    font-size: 17px;
+    font-size: 20px;
     font-weight: bold;
     line-height: 1;
     border-radius: 0 11px 11px 0;
@@ -141,10 +189,55 @@
     background: rgba(255, 255, 255, 0.07);
   }
 
+  /* The margin has to follow the padding the compact boxes use, or the
+     button stops reaching their edges. */
+  #app.compactHud #hintBtn {
+    width: 32px;
+    margin: -4px -7px -4px 0;
+    font-size: 17px;
+  }
+
   #hintBtn:active { background: rgba(255, 255, 255, 0.16); }
 
   /* Lit while a hint is pointing at it. */
-  #hintBtn.lit { color: var(--accent); }
+  /* The bulb is drawn rather than typed, because a light that has to
+     come on in yellow needs a colour something else can set. The glass
+     and the two lines of the base take their colour from the button, so
+     lighting it is a single property. */
+  #hintBtn svg {
+    display: block;
+    width: 21px;
+    height: 21px;
+    margin: 0 auto;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  #app.compactHud #hintBtn svg { width: 18px; height: 18px; }
+
+  /* Dark and dormant while there is nothing to say. The rays stay drawn
+     so the shape still reads as a light bulb, but they sit well back
+     until there is something to light them up for. */
+  #hintBtn { color: var(--ink-dim); }
+
+  /* Dimmed with a colour rather than with opacity. Anything below full
+     opacity puts the element on its own composited layer, and inside a
+     fixed position app that leaves a seam down the edge of the screen
+     where the browser fails to repaint. */
+  #hintBtn .bulbRays { stroke: #3f3a52; }
+  #hintBtn.lit .bulbRays { stroke: currentColor; }
+
+  /* Lit the moment a hint is ready, which is not the same as the hint
+     being drawn on the board. The player can put the trail away and the
+     bulb stays on, because the suggestion is still there to ask for. */
+  #hintBtn.lit { color: #ffd23f; }
+
+  /* A solid colour, not a translucent one. Nothing in this button is
+     allowed to need a layer of its own. */
+  #hintBtn.lit .bulbGlass { fill: #5c4d1e; }
 
   /* Same height as the stat boxes above, so the top of the screen
      reads as one block. */
@@ -179,6 +272,15 @@
   .goalIcon {
     flex: 0 0 auto;
     display: block;
+  }
+
+  /* Holds the icon. On Standard it is a box that fits its contents and
+     changes nothing; HD turns it into a recessed socket. */
+  .goalSocket {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   #goalCount {
@@ -358,7 +460,11 @@
     white-space: nowrap;
   }
 
+  /* Both of these are in the markup for HD's benefit and are nothing to
+     Standard. display:none rather than left alone, because .itemBtn is
+     a flex column with a gap and an empty span would still buy a gap. */
   .itemBtn .cost { display: none; }
+  .itemBtn .fuel { display: none; }
 
   .itemBtn.ready {
     opacity: 1;
@@ -486,6 +592,16 @@
   /* Wider than the volume readouts, because it has to say whether the
      delay is the one the player picked or the one the level chose. */
   #hintReadout { flex: 0 0 62px; }
+
+  /* Graphics is the one setting whose name does not explain itself, so
+     it gets a line under the button saying what the choice costs. */
+  .settingNote {
+    margin: 9px 2px 1px;
+    font-size: 11px;
+    line-height: 1.45;
+    color: var(--ink-dim);
+    text-align: center;
+  }
 
   /* A muted channel keeps its slider on screen so the level stays
      readable, and dims it to say it is doing nothing right now. */
@@ -747,6 +863,350 @@
   @media (min-width: 620px) {
     #app { max-width: 520px; margin: 0 auto; }
   }
+
+  /* ================================================================
+     HD CHROME
+
+     Worn as a class on #app when Graphics is set to HD. Standard is the
+     absence of it, so every rule above is left exactly as it was and
+     nothing here can change how the game looks on Standard.
+
+     The idea in one line: the interface is the setting and the gems are
+     the stones, so the chrome gives up its hue. Every surface, rail and
+     label here sits under 25 percent chroma. The only saturated colour
+     in the whole frame is borrowed from the stone the level is asking
+     for, which means the one coloured thing on screen is always
+     pointing at the thing being hunted.
+
+     That matters more than taste. Measured against the five gem hues,
+     the Standard tokens land: --accent on the violet gem's exact hex,
+     --good on the green gem's, --danger on the red gem's, the charge
+     bar 12 degrees off violet and the hint cyan 11 degrees off blue.
+     In a game where colour is the mechanic, the chrome was competing
+     with the board for the same channel.
+
+     Two house rules are kept throughout. Nothing here changes the
+     height of anything, because every pixel at the top of the screen is
+     a pixel the nine rows do not get. And nothing animates opacity or
+     sits below full opacity, because that puts the element on its own
+     composited layer and leaves a repaint seam down the edge of the
+     fixed shell. The item row actually drops four such layers.
+     ================================================================ */
+
+  #app.hdChrome {
+    --void:       #05040b;
+    --velvet:     #0d0a18;
+    --panel:      #17122b;
+    --panel-lift: #201936;
+    --panel-edge: rgba(214, 203, 255, 0.46);
+    --rail-lo:    rgba(122, 106, 174, 0.22);
+    --ink:        #f1edff;
+    --ink-dim:    #9c93bd;
+    --ink-faint:  #665d85;
+    --fuel-off:   #2a2145;
+    --fuel-on:    #cbbcf5;
+    --fuel-hot:   #f5f0ff;
+    --danger:     #ff4a5f;
+
+    /* Overwritten by renderGoalLine every time the goal changes. The
+       values here are the neutral the chrome wears when the goal names
+       no stone, which is what a score goal does. */
+    --goal-deep: #2d2748;
+    --goal-core: #9c93bd;
+    --goal-rim:  #d8d0f0;
+
+    /* Everything that used to be violet now borrows. */
+    --accent: var(--goal-rim);
+
+    background: var(--void);
+  }
+
+  /* ---- surfaces: metal, which is a gradient and never a flat line ---- */
+
+  #app.hdChrome .stat,
+  #app.hdChrome #goalBar {
+    background: linear-gradient(180deg, var(--panel-lift), var(--panel));
+    border-top-color: var(--panel-edge);
+    border-left-color: var(--rail-lo);
+    border-right-color: var(--rail-lo);
+    border-bottom-color: rgba(0, 0, 0, 0.5);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  }
+
+  /* ---- moves: warns before it shouts ----
+
+     The number still turns red at four. The stripe starts warming at
+     eight, which is far enough out to still be able to do something
+     about it, and it arrives in peripheral vision rather than asking to
+     be read. refreshHud sets the colour. */
+
+  #app.hdChrome #movesStat {
+    position: relative;
+    padding-left: 13px;
+  }
+
+  #app.hdChrome #movesStat::before {
+    content: "";
+    position: absolute;
+    left: 4px;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 99px;
+    background: var(--moves-stripe);
+    transition: background 0.3s ease;
+  }
+
+  /* ---- the goal line ---- */
+
+  /* The stone sits in a recess, the way a stone sits in a ring. The
+     socket is in the markup on Standard too, where it carries no styling
+     at all and simply holds the icon where the icon already was. */
+  #app.hdChrome .goalSocket {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+    background: var(--velvet);
+    box-shadow:
+      inset 0 1px 3px rgba(0, 0, 0, 0.7),
+      inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  }
+
+  #app.hdChrome.compactHud .goalSocket { width: 24px; height: 24px; }
+
+  #app.hdChrome #goalTrack {
+    background: var(--velvet);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.6);
+  }
+
+  #app.hdChrome #goalFill {
+    background: linear-gradient(90deg, var(--goal-deep), var(--goal-core));
+    box-shadow: 0 0 8px -1px var(--goal-core);
+  }
+
+  /* ---- the two edge buttons ---- */
+
+  #app.hdChrome #menuBtn,
+  #app.hdChrome #hintBtn {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.07), rgba(255, 255, 255, 0.02));
+    border-left-color: var(--rail-lo);
+  }
+
+  #app.hdChrome #menuBtn:active,
+  #app.hdChrome #hintBtn:active {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.08));
+  }
+
+  /* ---- charge: a filament, not a rainbow ----
+
+     Standard paints charge violet to cyan to green and goal progress
+     violet to green, so two bars measuring completely different things
+     look nearly the same. Charge becomes one hue read as lightness,
+     which leaves colour to mean progress and nothing else. */
+
+  #app.hdChrome #chargeTrack {
+    background: var(--velvet);
+    border-color: rgba(0, 0, 0, 0.5);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.7);
+  }
+
+  #app.hdChrome #chargeFill {
+    background: linear-gradient(90deg, var(--fuel-off) 0%, var(--fuel-on) 78%, var(--fuel-hot) 100%);
+    box-shadow: 0 0 10px -2px var(--fuel-on);
+  }
+
+  /* A gate per item cost. Passing one lights it, so a glance at the bar
+     says what the next spend buys. */
+  #app.hdChrome .chargeTick {
+    top: 2px;
+    bottom: 2px;
+    width: 1px;
+    margin-left: -0.5px;
+    background: rgba(5, 4, 11, 0.9);
+    transition: background 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  #app.hdChrome .chargeTick.reached {
+    background: var(--fuel-hot);
+    box-shadow: 0 0 6px 0 var(--fuel-on);
+  }
+
+  /* ---- items: fill, never dim ----
+
+     Standard drops an unaffordable item to 0.4 opacity, which reads as
+     broken rather than as not yet, and costs a composited layer each.
+     Full contrast is kept and fuel rises toward the cost instead. */
+
+  #app.hdChrome .itemBtn {
+    --fuel: 0%;
+    opacity: 1;
+    position: relative;
+    overflow: hidden;
+    background: linear-gradient(180deg, var(--panel-lift), var(--panel));
+    border-top-color: var(--rail-lo);
+    border-left-color: var(--rail-lo);
+    border-right-color: var(--rail-lo);
+    border-bottom-color: rgba(0, 0, 0, 0.5);
+    color: var(--ink-faint);
+    transition: color 0.2s ease, border-color 0.2s ease;
+  }
+
+  #app.hdChrome .itemBtn .fuel {
+    display: block;
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: var(--fuel);
+    background: linear-gradient(180deg, rgba(203, 188, 245, 0.13), rgba(203, 188, 245, 0.04));
+    border-top: 1px solid rgba(203, 188, 245, 0.28);
+    transition: height 0.25s ease-out;
+    pointer-events: none;
+  }
+
+  /* The fuel is positioned, so it would paint over static content
+     whatever the markup order. The label is lifted above it. */
+  #app.hdChrome .itemBtn .glyph,
+  #app.hdChrome .itemBtn .name,
+  #app.hdChrome .itemBtn .cost {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* The cost moves out of the name and into the corner. */
+  #app.hdChrome .itemBtn .inlineCost { display: none; }
+
+  #app.hdChrome .itemBtn .cost {
+    display: block;
+    position: absolute;
+    top: 3px;
+    right: 6px;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.4px;
+    color: var(--ink-faint);
+    font-variant-numeric: tabular-nums;
+    transition: color 0.2s ease;
+  }
+
+  #app.hdChrome .itemBtn.ready {
+    opacity: 1;
+    background: linear-gradient(180deg, var(--panel-lift), var(--panel));
+    border-top-color: var(--panel-edge);
+    color: var(--ink);
+  }
+
+  #app.hdChrome .itemBtn.ready .cost { color: var(--fuel-on); }
+
+  /* Armed is white and moving. Standard uses the green gem's exact hex.
+     Nothing on the board is ever ringed in white, so this cannot be
+     misread as a stone. */
+  #app.hdChrome .itemBtn.armed {
+    opacity: 1;
+    color: #fff;
+    background: linear-gradient(180deg, var(--panel-lift), var(--panel));
+    border-color: rgba(255, 255, 255, 0.85);
+    animation: hdArmed 1.2s ease-in-out infinite;
+  }
+
+  @keyframes hdArmed {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.4), inset 0 0 12px -4px rgba(255, 255, 255, 0.5); }
+    50%      { box-shadow: 0 0 14px 2px rgba(255, 255, 255, 0.4), inset 0 0 18px -2px rgba(255, 255, 255, 0.6); }
+  }
+
+  /* A hint is dashed and slowly pulsing on the board. It is dashed and
+     slowly pulsing here too, so a hint looks like a hint wherever it
+     turns up. The pulse runs on border-color rather than opacity, which
+     repaints without asking for a layer. */
+  #app.hdChrome .itemBtn.hinted {
+    opacity: 1;
+    color: var(--ink);
+    background: linear-gradient(180deg, var(--panel-lift), var(--panel));
+    border-color: var(--rail-lo);
+    animation: none;
+  }
+
+  #app.hdChrome .itemBtn.hinted::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border-radius: 10px;
+    border: 1px dashed rgba(255, 255, 255, 0.9);
+    animation: hdHint 1.5s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  @keyframes hdHint {
+    0%, 100% { border-color: rgba(255, 255, 255, 0.32); }
+    50%      { border-color: rgba(255, 255, 255, 0.95); }
+  }
+
+  /* ---- cards and menus ---- */
+
+  #app.hdChrome #card,
+  #app.hdChrome #menuCard {
+    background: linear-gradient(160deg, var(--panel-lift), var(--velvet));
+    border-color: var(--rail-lo);
+    border-top-color: var(--panel-edge);
+    box-shadow: 0 18px 50px rgba(0, 0, 0, 0.7);
+  }
+
+  #app.hdChrome #menuPanel,
+  #app.hdChrome #overlay {
+    background: rgba(5, 4, 11, 0.9);
+  }
+
+  /* Standard runs four gem colours through the title in one gradient.
+     One warm metal sweep instead, with the borrowed hue in the middle
+     of it so the card still knows what level it belongs to.
+
+     background-image, not the background shorthand. The shorthand
+     resets background-clip to border-box, and the title is painted by
+     clipping this gradient to the glyphs. */
+  #app.hdChrome #cardTitle {
+    background-image: linear-gradient(90deg, #ffffff, var(--goal-rim), var(--fuel-on));
+  }
+
+  #app.hdChrome #cardBody { color: #ded7f5; }
+
+  #app.hdChrome .menuItem,
+  #app.hdChrome button {
+    background: linear-gradient(180deg, var(--panel-lift), var(--panel));
+    border-color: var(--rail-lo);
+    border-top-color: rgba(214, 203, 255, 0.26);
+    color: var(--ink);
+  }
+
+  /* The one action the card is really offering. A brighter face and a
+     glow underneath in the level's own hue, in place of the slab of
+     violet Standard paints. */
+  #app.hdChrome #cardBtn,
+  #app.hdChrome .cardMenuItem.primary {
+    background: linear-gradient(180deg, #2b2249, #1a1430);
+    border-color: transparent;
+    border-top-color: rgba(255, 255, 255, 0.5);
+    border-bottom-color: rgba(0, 0, 0, 0.6);
+    box-shadow:
+      0 0 20px -6px var(--goal-core),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    color: #ffffff;
+  }
+
+  #app.hdChrome .menuItem.danger {
+    color: var(--danger);
+    border-color: rgba(255, 74, 95, 0.42);
+  }
+
+  #app.hdChrome .settingGroup {
+    border-color: var(--rail-lo);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    #app.hdChrome .itemBtn.armed,
+    #app.hdChrome .itemBtn.hinted::after { animation: none; }
+  }
 </style>
 </head>
 <body>
@@ -756,17 +1216,23 @@
   <div id="hud">
     <div id="topRow">
       <div class="stat" id="scoreStat">
-        <span class="label">Score:</span>
-        <span class="value" id="scoreValue">0</span>
+        <div class="statBody">
+          <span class="label">Score</span>
+          <span class="value" id="scoreValue">0</span>
+        </div>
       </div>
       <div class="stat" id="movesStat">
-        <span class="label">Moves:</span>
-        <span class="value" id="movesValue">20</span>
+        <div class="statBody">
+          <span class="label">Moves</span>
+          <span class="value" id="movesValue">20</span>
+        </div>
       </div>
       <div class="stat" id="levelStat">
-        <span class="label">Level:</span>
-        <span class="value" id="levelValue">1</span>
-        <button id="hintBtn" title="Hint" aria-label="Show a hint">?</button>
+        <div class="statBody">
+          <span class="label">Level</span>
+          <span class="value" id="levelValue">1</span>
+        </div>
+        <button id="hintBtn" title="Hint" aria-label="Show a hint"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="bulbRays"><path d="M7.33 4.33 5.35 2.35"/><path d="M5.4 9H2.6"/><path d="M7.33 13.67 5.35 15.65"/><path d="M16.67 4.33 18.65 2.35"/><path d="M18.6 9h2.8"/><path d="M16.67 13.67 18.65 15.65"/></g><circle class="bulbGlass" cx="12" cy="9" r="4.7"/><path d="M9.6 15.4h4.8"/><path d="M10.5 17.9h3"/></svg></button>
       </div>
     </div>
     <div id="goalBar">
@@ -796,6 +1262,11 @@
 
         <div id="settingsPage" class="hidden">
           <p id="musicNote" class="hidden"></p>
+
+          <div class="settingGroup" id="graphicsGroup">
+            <button class="menuItem" id="graphicsToggle">Graphics: HD</button>
+            <p class="settingNote" id="graphicsNote"></p>
+          </div>
 
           <div class="settingGroup" id="hintGroup">
             <button class="menuItem" id="hintToggle">Hints: On</button>
@@ -897,6 +1368,67 @@ const GEM_COLOURS = [
   { name: "violet", core: "#b07cff", rim: "#e2ccff", glow: "#8b4dff", shape: "hexagon"  }
 ];
 
+/* The HD ramps. Five stops instead of three, because a faceted stone
+   needs somewhere to travel: a deep pavilion tone to sit under it and a
+   near white spark for the flat top face. The hues are the ones above,
+   held at the same spacing so nothing gets harder to tell apart, with
+   the cores pushed up in lightness.
+
+   Only the gem body reads these. The path line, the burst shards, the
+   toasts and the loop tint all stay on GEM_COLOURS in both modes, so
+   switching appearance changes the stones and nothing else. Indexes
+   match GEM_COLOURS entry for entry. */
+const HD_GEM_COLOURS = [
+  { deep: "#6e0a2f", glow: "#ff1f5c", core: "#ff4d7d", rim: "#ffa8c2", spark: "#fff2f6" },
+  { deep: "#7d3500", glow: "#ff8f0a", core: "#ffb23d", rim: "#ffdb96", spark: "#fff8e8" },
+  { deep: "#04543a", glow: "#0ce07d", core: "#3bf39c", rim: "#a8ffd4", spark: "#edfff5" },
+  { deep: "#05386f", glow: "#149bff", core: "#46bcff", rim: "#a8e2ff", spark: "#eef8ff" },
+  { deep: "#3f157e", glow: "#9a4dff", core: "#bd85ff", rim: "#ddc2ff", spark: "#f7f0ff" }
+];
+
+/* The two appearances the Graphics setting picks between. Standard is
+   the game as it shipped: flat gradient gems and a violet interface. HD
+   is the faceted cut and the chrome built around it. One setting moves
+   both, because a cut stone in a flat frame looks like a mistake and a
+   flat stone in a cut frame looks worse.
+
+   HD is more to draw per gem, which is the whole reason Standard stays
+   on the menu for older devices. */
+const GRAPHICS_STANDARD = "standard";
+const GRAPHICS_HD = "hd";
+
+/* How many moves out the HD moves stripe starts warming. Four is where
+   the number already turns red, so eight gives the player a run up to
+   it rather than a slap. */
+const MOVES_WARN_FROM = 8;
+const MOVES_STRIPE_CALM = "#665d85";
+const MOVES_STRIPE_ALARM = "#ff4a5f";
+
+/* What the borrowed accent wears when the goal names no stone. A score
+   goal has no piece to picture and a stone goal names one with no
+   colour of its own, so both are answered with the chrome's own
+   platinum rather than pretending a hue is there. */
+const GOAL_ACCENT_NEUTRAL = { deep: "#2d2748", core: "#9c93bd", rim: "#d8d0f0" };
+
+const graphics = {
+  mode: GRAPHICS_HD
+};
+
+/* The key light every HD facet is shaded against. Up and to the left,
+   the direction the highlight blob already implied, so nothing in the
+   scene contradicts anything else. */
+const HD_LIGHT_X = -0.55;
+const HD_LIGHT_Y = -0.83;
+
+/* How much of the stone the flat top face covers. */
+const HD_TABLE_SCALE = 0.44;
+
+/* One full sweep of the travelling glint, and the slice of that cycle
+   the bar is actually on screen for. Each gem carries its own phase, so
+   the board twinkles unevenly instead of flashing in unison. */
+const HD_GLINT_PERIOD_SECONDS = 4.2;
+const HD_GLINT_VISIBLE_FRACTION = 0.2;
+
 /* Fraction of a cell that responds to a touch. Anything below 0.707
    keeps diagonal drags from clipping their neighbours. */
 const HIT_RADIUS = 0.55;
@@ -912,6 +1444,21 @@ const BURST_SECONDS = 0.24;
    this long per cell of distance from the middle of the loop, so the
    clear reads as a wave rolling outwards. */
 const WAVE_SECONDS_PER_CELL = 0.05;
+
+/* Shuffle empties the board and fills it back in a row at a time from
+   the top, so the player sees every tile land somewhere new. The tiles
+   shrink away over SHUFFLE_SHRINK_SECONDS, the board sits empty for
+   SHUFFLE_BEAT_SECONDS, then each row starts SHUFFLE_ROW_STEP_SECONDS
+   after the one above it. A tile takes 1 / SHUFFLE_GROW_RATE seconds
+   to grow in once its turn arrives. */
+const SHUFFLE_SHRINK_SECONDS = 0.12;
+const SHUFFLE_BEAT_SECONDS = 0.1;
+const SHUFFLE_ROW_STEP_SECONDS = 0.045;
+const SHUFFLE_GROW_RATE = 5;
+
+/* How fast a tile grows to full size when it spawns, in scale per
+   second, so 4 is a quarter of a second from nothing to full. */
+const SPAWN_GROW_RATE = 4;
 
 /* A bomb clears the eight cells around it and cracks a stone once. A
    bomb caught inside a closed loop reaches three cells in every
@@ -1006,10 +1553,15 @@ function makeGem(colourIndex) {
     fallSpeed: 0,
     scale: 0,            // grows to 1 on spawn
     spin: 0,
+    /* Where this stone sits in the HD glint cycle. Random per gem so no
+       two catch the light at the same moment, and it travels with the
+       gem when the board falls, because the cell object moves. */
+    glintPhase: Math.random() * HD_GLINT_PERIOD_SECONDS,
     doomed: false,       // marked for removal once the burst finishes
     dying: 0,            // seconds left in the burst animation
     dyingMax: BURST_SECONDS,
-    dyingDelay: 0        // seconds to wait before that burst starts
+    dyingDelay: 0,       // seconds to wait before that burst starts
+    spawnDelay: 0        // seconds to wait before it grows in, used by shuffle
   };
 }
 
@@ -1030,7 +1582,8 @@ function makeStone(hp) {
     doomed: false,
     dying: 0,
     dyingMax: BURST_SECONDS,
-    dyingDelay: 0
+    dyingDelay: 0,
+    spawnDelay: 0
   };
 }
 
@@ -1040,7 +1593,7 @@ function makeStone(hp) {
 
 const game = {
   board: [],
-  phase: "title",        // "title" | "idle" | "bursting" | "falling" | "over" | "levelDone"
+  phase: "title",        // "title" | "idle" | "bursting" | "falling" | "shuffling" | "over" | "levelDone"
   path: [],              // list of {row, col} making up the current link
   pathColour: -1,
   loopClosed: false,
@@ -1053,6 +1606,8 @@ const game = {
   movesSinceBlight: 0,
   goal: null,
   burstTimer: 0,
+  shuffleTime: 0,        // seconds into the shuffle empty and refill
+  shuffleRowsTicked: 0,  // rows of that refill that have sounded their note
   shake: 0,
   time: 0,
   continues: CONTINUES_AT_START,
@@ -1073,7 +1628,8 @@ const hints = {
   delaySeconds: HINT_DELAY_EARLY_SECONDS,
   idleSeconds: 0,
   move: null,
-  showing: false
+  ready: false,      // a move is worked out and the bulb is lit
+  showing: false     // the trail for it is drawn on the board
 };
 
 /* ------------------------------------------------------------------
@@ -1083,6 +1639,8 @@ const hints = {
 const canvas = document.getElementById("board");
 let ctx = canvas.getContext("2d");
 const stage = document.getElementById("stage");
+const app = document.getElementById("app");
+const hud = document.getElementById("hud");
 const scoreValue = document.getElementById("scoreValue");
 const movesValue = document.getElementById("movesValue");
 const movesStat = document.getElementById("movesStat");
@@ -1117,6 +1675,8 @@ const menuMain = document.getElementById("menuMain");
 const menuSettings = document.getElementById("menuSettings");
 const settingsPage = document.getElementById("settingsPage");
 const settingsBack = document.getElementById("settingsBack");
+const graphicsToggle = document.getElementById("graphicsToggle");
+const graphicsNote = document.getElementById("graphicsNote");
 const musicNote = document.getElementById("musicNote");
 const sfxGroup = document.getElementById("sfxGroup");
 const sfxToggle = document.getElementById("sfxToggle");
@@ -3209,40 +3769,124 @@ function spendCharge(id) {
   game.charge = Math.max(0, game.charge - itemById(id).cost);
 }
 
-function fireShuffle() {
-  const colours = [];
-  for (let row = 0; row < ROWS; row++) {
-    for (let col = 0; col < COLS; col++) {
-      const cell = cellAt(row, col);
-      if (cell.kind === "gem" && cell.special === "none") colours.push(cell.colour);
-    }
-  }
-
-  for (let i = colours.length - 1; i > 0; i--) {
+function shuffleInPlace(list) {
+  for (let i = list.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    const swap = colours[i];
-    colours[i] = colours[j];
-    colours[j] = swap;
+    const swap = list[i];
+    list[i] = list[j];
+    list[j] = swap;
   }
+}
 
-  let next = 0;
+/* Deals every tile on the board to a new spot. The tiles themselves
+   move, so a gem keeps its colour, a bomb stays a bomb and a blighted
+   gem carries its infection and its age to wherever it lands. Only the
+   positions change.
+
+   Stones are dealt first and separately because they may not sit on
+   the top row. scatterStones keeps them off it so they cannot wall off
+   fresh spawns, and gravity only ever moves a stone downwards, so
+   nothing else on the board can put one up there either. */
+function permuteBoard() {
+  const stones = [];
+  const others = [];
+
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = cellAt(row, col);
-      if (cell.kind === "gem" && cell.special === "none") {
-        cell.colour = colours[next];
-        cell.scale = 1.35;
-        next++;
+      if (cell.kind === "stone") {
+        stones.push(cell);
+      } else {
+        others.push(cell);
       }
     }
   }
 
+  const lowerSpots = [];
+  for (let row = 1; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      lowerSpots.push({ row: row, col: col });
+    }
+  }
+
+  if (stones.length > lowerSpots.length) {
+    throw new Error("cannot shuffle " + stones.length + " stones into the " + lowerSpots.length + " cells below the top row");
+  }
+
+  shuffleInPlace(lowerSpots);
+  shuffleInPlace(others);
+
+  const next = [];
+  for (let row = 0; row < ROWS; row++) {
+    const line = [];
+    for (let col = 0; col < COLS; col++) {
+      line.push(null);
+    }
+    next.push(line);
+  }
+
+  for (let i = 0; i < stones.length; i++) {
+    const spot = lowerSpots[i];
+    next[spot.row][spot.col] = stones[i];
+  }
+
+  let taken = 0;
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      if (next[row][col] === null) {
+        next[row][col] = others[taken];
+        taken++;
+      }
+    }
+  }
+
+  game.board = next;
+}
+
+/* Hides the whole board and books every tile back in, top row first.
+   The board is already in its new order by the time this runs: only
+   the drawing is staggered, so there is never a half shuffled board
+   the player could act on. */
+function startShuffleFill() {
+  const fillStart = SHUFFLE_SHRINK_SECONDS + SHUFFLE_BEAT_SECONDS;
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      cell.offsetY = 0;
+      cell.fallSpeed = 0;
+      cell.spawnDelay = fillStart + row * SHUFFLE_ROW_STEP_SECONDS;
+    }
+  }
+
+  game.shuffleTime = 0;
+  game.shuffleRowsTicked = 0;
+  game.phase = "shuffling";
+}
+
+function fireShuffle() {
+  permuteBoard();
+
+  /* A layout with no link at all would hand the player a dead board,
+     so it is dealt again. The set of tiles is fixed and nearly always
+     holds three of some colour, so the first deal nearly always lands
+     a link and this loop does not run. */
+  let attempts = 0;
+  while (hasAnyLink() === false && attempts < 20) {
+    attempts++;
+    permuteBoard();
+  }
+
+  /* Twenty deals without a link means this set of tiles cannot make
+     one by moving alone, so the colours have to give. On a board that
+     already has a link this does nothing. */
   ensureSolvableBoard();
+
+  startShuffleFill();
   clearHint();
   spendCharge("shuffle");
   game.shake = Math.max(game.shake, 5);
   showToast("SHUFFLED", "#4fd6ff");
-  playTone(520, 0.24, "triangle", 0.14);
   saveGame();
 }
 
@@ -4202,6 +4846,18 @@ function findHintMove() {
    Showing, clearing and timing the hint
    ------------------------------------------------------------------ */
 
+/* The bulb answers a different question from the trail on the board.
+   The trail says "here is the move". The bulb says "there is a move
+   waiting whenever you want it", so it stays lit while the trail is put
+   away and only goes out when the player actually plays. */
+function refreshHintButton() {
+  if (hints.ready === true) {
+    hintBtn.classList.add("lit");
+  } else {
+    hintBtn.classList.remove("lit");
+  }
+}
+
 function showHint() {
   if (game.phase !== "idle") return;
   if (menuIsOpen() === true) return;
@@ -4213,28 +4869,32 @@ function showHint() {
     return;
   }
 
+  hints.ready = true;
   hints.showing = true;
-  hintBtn.classList.add("lit");
+  refreshHintButton();
   updateItemBar();
 }
 
 /* The board has changed, so whatever was worked out about it no longer
-   holds. */
+   holds and the bulb goes out with it. */
 function clearHint() {
   hints.move = null;
+  hints.ready = false;
   hints.showing = false;
   hints.idleSeconds = 0;
-  hintBtn.classList.remove("lit");
+  refreshHintButton();
 }
 
-/* The player has done something, so they are not stuck. The move stays
-   cached because the board itself has not moved. */
+/* The player has done something, so they are not stuck. The trail comes
+   off the board and the bulb goes out: they are playing, and a light
+   nagging at them while they do is the opposite of the point. */
 function resetHintTimer() {
   hints.idleSeconds = 0;
-  if (hints.showing === false) return;
+  if (hints.ready === false && hints.showing === false) return;
 
+  hints.ready = false;
   hints.showing = false;
-  hintBtn.classList.remove("lit");
+  refreshHintButton();
   updateItemBar();
 }
 
@@ -4247,7 +4907,7 @@ function updateHint(dt) {
   if (game.aiming !== "none") { hints.idleSeconds = 0; return; }
   if (pointerDown === true) { hints.idleSeconds = 0; return; }
 
-  if (hints.showing === true) return;
+  if (hints.ready === true) return;
   if (hints.enabled === false) return;
 
   hints.idleSeconds += dt;
@@ -4584,14 +5244,15 @@ function saveSettings() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 2,
+    version: 3,
     sfxEnabled: sound.enabled,
     sfxVolume: sound.volume,
     musicEnabled: music.enabled,
     musicVolume: music.volume,
     hintsEnabled: hints.enabled,
     hintDelayChosen: hints.delayChosen,
-    hintDelaySeconds: hints.delaySeconds
+    hintDelaySeconds: hints.delaySeconds,
+    graphicsMode: graphics.mode
   };
 
   window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
@@ -4607,6 +5268,9 @@ function saveSettings() {
    should keep them when a new setting arrives. A version 1
    payload carries no answer about hints for the good reason that there
    was nothing to answer, so the hint helper keeps its own defaults.
+   Version 2 is the same story one setting later: it knows about hints
+   and knows nothing about graphics, so graphics keeps its own default,
+   which is HD.
 
    A payload under a version this build does not know is treated as
    absent, the same way an old save is. A payload under a version it
@@ -4619,7 +5283,7 @@ function loadSettings() {
   if (raw === null) return;
 
   const payload = JSON.parse(raw);
-  if (payload.version !== 1 && payload.version !== 2) return;
+  if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3) return;
 
   sound.enabled = storedSwitch(payload.sfxEnabled, "sfxEnabled");
   sound.volume = storedLevel(payload.sfxVolume, "sfxVolume");
@@ -4631,6 +5295,18 @@ function loadSettings() {
   hints.enabled = storedSwitch(payload.hintsEnabled, "hintsEnabled");
   hints.delayChosen = storedSwitch(payload.hintDelayChosen, "hintDelayChosen");
   hints.delaySeconds = storedDelay(payload.hintDelaySeconds, "hintDelaySeconds");
+
+  if (payload.version === 2) return;
+
+  graphics.mode = storedGraphicsMode(payload.graphicsMode, "graphicsMode");
+}
+
+function storedGraphicsMode(value, fieldName) {
+  if (value === GRAPHICS_STANDARD) return GRAPHICS_STANDARD;
+  if (value === GRAPHICS_HD) return GRAPHICS_HD;
+
+  throw new Error("Prism Path: stored setting '" + fieldName + "' should be '" +
+    GRAPHICS_STANDARD + "' or '" + GRAPHICS_HD + "' and is " + JSON.stringify(value) + ".");
 }
 
 function storedDelay(value, fieldName) {
@@ -5605,7 +6281,528 @@ function traceGemShape(shape, cx, cy, radius, spin) {
   tracePolygon(cx, cy, radius * 1.05, 6, spin);
 }
 
+/* ------------------------------------------------------------------
+   HD gem bodies
+
+   Standard fills the silhouette with one corner to corner gradient.
+   HD cuts the same silhouette into facets: a ring of flat shaded
+   triangles between the girdle and a lit top face, with dispersion
+   inside, a graded rim and a glint that travels across.
+
+   The silhouette itself is shared. Both modes trace through
+   traceGemShape, so a gem is the same shape and the same size whichever
+   appearance is on, and nothing about hit testing or the board layout
+   moves when the setting changes.
+   ------------------------------------------------------------------ */
+
+function hexToRgb(hex) {
+  const red = parseInt(hex.slice(1, 3), 16);
+  const green = parseInt(hex.slice(3, 5), 16);
+  const blue = parseInt(hex.slice(5, 7), 16);
+  return { r: red, g: green, b: blue };
+}
+
+function mixRgb(from, to, amount) {
+  return {
+    r: from.r + (to.r - from.r) * amount,
+    g: from.g + (to.g - from.g) * amount,
+    b: from.b + (to.b - from.b) * amount
+  };
+}
+
+function rgbCss(rgb) {
+  const red = Math.round(rgb.r);
+  const green = Math.round(rgb.g);
+  const blue = Math.round(rgb.b);
+  return "rgb(" + red + ", " + green + ", " + blue + ")";
+}
+
+function rgbaCss(rgb, alpha) {
+  const red = Math.round(rgb.r);
+  const green = Math.round(rgb.g);
+  const blue = Math.round(rgb.b);
+  return "rgba(" + red + ", " + green + ", " + blue + ", " + alpha + ")";
+}
+
+/* A ramp is the five stops darkest first. Sampling it at nought gives
+   the pavilion tone and at one the spark, which is exactly the range a
+   single facet can be shaded across. */
+function sampleRamp(ramp, position) {
+  const clamped = Math.max(0, Math.min(1, position));
+  const scaled = clamped * (ramp.length - 1);
+  const lower = Math.min(ramp.length - 2, Math.floor(scaled));
+  const local = scaled - lower;
+  return mixRgb(ramp[lower], ramp[lower + 1], local);
+}
+
+/* Only the hue is wanted, to spin the dispersion colours off the base
+   without hand picking three more hexes per gem. */
+function hueOfRgb(rgb) {
+  const red = rgb.r / 255;
+  const green = rgb.g / 255;
+  const blue = rgb.b / 255;
+  const highest = Math.max(red, green, blue);
+  const lowest = Math.min(red, green, blue);
+  const span = highest - lowest;
+
+  if (span === 0) return 0;
+
+  let sector = 0;
+  if (highest === red) {
+    sector = ((green - blue) / span) % 6;
+  } else if (highest === green) {
+    sector = (blue - red) / span + 2;
+  } else {
+    sector = (red - green) / span + 4;
+  }
+
+  const degrees = sector * 60;
+  if (degrees < 0) return degrees + 360;
+  return degrees;
+}
+
+/* Worked out once at load. Parsing hex and converting to hue is
+   arithmetic on constants, and doing it per gem per frame would be it
+   sixty three times a frame for the same five answers. */
+const HD_RAMPS = [];
+const HD_FIRE_HUES = [];
+
+for (let i = 0; i < HD_GEM_COLOURS.length; i++) {
+  const palette = HD_GEM_COLOURS[i];
+
+  HD_RAMPS.push([
+    hexToRgb(palette.deep),
+    hexToRgb(palette.glow),
+    hexToRgb(palette.core),
+    hexToRgb(palette.rim),
+    hexToRgb(palette.spark)
+  ]);
+
+  HD_FIRE_HUES.push(hueOfRgb(hexToRgb(palette.core)));
+}
+
+/* The most anchors any shape needs: twelve for the circle and the
+   hexagon, nine for the triangle, eight for the square and the
+   diamond. */
+const HD_MAX_ANCHORS = 12;
+
+/* Facet corners are worked out fresh for every gem on every frame.
+   Allocating new arrays sixty three times a frame is churn a phone does
+   not need, so two scratch buffers are filled in place instead. Nothing
+   holds on to either past the gem being drawn. */
+const hdOuterAnchors = [];
+const hdTableAnchors = [];
+
+for (let i = 0; i < HD_MAX_ANCHORS; i++) {
+  hdOuterAnchors.push({ x: 0, y: 0 });
+  hdTableAnchors.push({ x: 0, y: 0 });
+}
+
+/* Points spaced along the outline of a polygon. Extra points are
+   dropped along each edge so a triangle ends up with as many facets as
+   a hexagon; they sit on the edge, so the silhouette is untouched. */
+function fillPolygonAnchors(cx, cy, radius, sides, rotation, stepsPerEdge) {
+  let written = 0;
+
+  for (let side = 0; side < sides; side++) {
+    const fromAngle = rotation + (Math.PI * 2 * side) / sides;
+    const toAngle = rotation + (Math.PI * 2 * (side + 1)) / sides;
+
+    const fromX = cx + Math.cos(fromAngle) * radius;
+    const fromY = cy + Math.sin(fromAngle) * radius;
+    const toX = cx + Math.cos(toAngle) * radius;
+    const toY = cy + Math.sin(toAngle) * radius;
+
+    for (let step = 0; step < stepsPerEdge; step++) {
+      const along = step / stepsPerEdge;
+      hdOuterAnchors[written].x = fromX + (toX - fromX) * along;
+      hdOuterAnchors[written].y = fromY + (toY - fromY) * along;
+      written = written + 1;
+    }
+  }
+
+  return written;
+}
+
+function fillCircleAnchors(cx, cy, radius, rotation, wanted) {
+  for (let i = 0; i < wanted; i++) {
+    const angle = rotation + (Math.PI * 2 * i) / wanted;
+    hdOuterAnchors[i].x = cx + Math.cos(angle) * radius;
+    hdOuterAnchors[i].y = cy + Math.sin(angle) * radius;
+  }
+  return wanted;
+}
+
+/* Fills both buffers and hands back how many anchors are live. The
+   radii here match traceGemShape exactly, so the facets land on the
+   silhouette rather than near it. */
+function fillGemAnchors(shape, cx, cy, radius, spin) {
+  let count = 0;
+
+  if (shape === "circle") {
+    count = fillCircleAnchors(cx, cy, radius, spin - Math.PI / 2, 12);
+  } else if (shape === "diamond") {
+    count = fillPolygonAnchors(cx, cy, radius * 1.12, 4, spin - Math.PI / 2, 2);
+  } else if (shape === "square") {
+    count = fillPolygonAnchors(cx, cy, radius * 1.06, 4, spin + Math.PI / 4, 2);
+  } else if (shape === "triangle") {
+    count = fillPolygonAnchors(cx, cy, radius * 1.15, 3, spin - Math.PI / 2, 3);
+  } else {
+    count = fillPolygonAnchors(cx, cy, radius * 1.05, 6, spin, 2);
+  }
+
+  for (let i = 0; i < count; i++) {
+    hdTableAnchors[i].x = cx + (hdOuterAnchors[i].x - cx) * HD_TABLE_SCALE;
+    hdTableAnchors[i].y = cy + (hdOuterAnchors[i].y - cy) * HD_TABLE_SCALE;
+  }
+
+  return count;
+}
+
+/* A soft coloured halo under the stone, so gems light the board they
+   sit on. Painted before the body, and the only part of the gem that
+   reaches outside its own silhouette. */
+function drawHdBloom(glowColour, cx, cy, radius) {
+  const reach = radius * 1.85;
+  const glow = hexToRgb(glowColour);
+
+  const halo = ctx.createRadialGradient(cx, cy, radius * 0.5, cx, cy, reach);
+  halo.addColorStop(0, rgbaCss(glow, 0.34));
+  halo.addColorStop(0.45, rgbaCss(glow, 0.13));
+  halo.addColorStop(1, rgbaCss(glow, 0));
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.beginPath();
+  ctx.arc(cx, cy, reach, 0, Math.PI * 2);
+  ctx.fillStyle = halo;
+  ctx.fill();
+  ctx.restore();
+}
+
+/* One flat facet. Its shade comes from where it faces relative to the
+   key light, so the whole stone stays lit from one direction however
+   many sides the shape has. */
+function fillFacet(ramp, cx, cy, corners, cornerCount, shadeOffset) {
+  let centroidX = 0;
+  let centroidY = 0;
+
+  for (let i = 0; i < cornerCount; i++) {
+    centroidX = centroidX + corners[i].x;
+    centroidY = centroidY + corners[i].y;
+  }
+
+  centroidX = centroidX / cornerCount;
+  centroidY = centroidY / cornerCount;
+
+  const awayX = centroidX - cx;
+  const awayY = centroidY - cy;
+  const distance = Math.sqrt(awayX * awayX + awayY * awayY);
+  const facingX = awayX / distance;
+  const facingY = awayY / distance;
+
+  /* Lambert against the key light. The dot product runs minus one to
+     one, so it is remapped into a nought to one shade before the curve
+     and the offset go on.
+
+     The range stops well short of the spark on purpose. A facet that
+     reaches the top of the ramp goes white, and a white gem is one the
+     player cannot name at a glance. The brightest facet lands on the
+     rim tone and the shine is left to the table and the highlights. */
+  const towardsLight = facingX * HD_LIGHT_X + facingY * HD_LIGHT_Y;
+  const lambert = (towardsLight + 1) / 2;
+  const shade = 0.12 + Math.pow(lambert, 1.5) * 0.62 + shadeOffset;
+
+  ctx.beginPath();
+  ctx.moveTo(corners[0].x, corners[0].y);
+  for (let i = 1; i < cornerCount; i++) {
+    ctx.lineTo(corners[i].x, corners[i].y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = rgbCss(sampleRamp(ramp, shade));
+  ctx.fill();
+}
+
+/* The crown: two facets per anchor, one reaching the girdle and one
+   leaning in toward the table. They are given opposite shade nudges, so
+   neighbours sit a step apart and the cut reads even on a still frame. */
+const hdFacetCorners = [{ x: 0, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 0 }];
+
+function drawHdCrown(ramp, cx, cy, anchorCount) {
+  for (let i = 0; i < anchorCount; i++) {
+    const next = (i + 1) % anchorCount;
+
+    hdFacetCorners[0].x = hdOuterAnchors[i].x;
+    hdFacetCorners[0].y = hdOuterAnchors[i].y;
+    hdFacetCorners[1].x = hdOuterAnchors[next].x;
+    hdFacetCorners[1].y = hdOuterAnchors[next].y;
+    hdFacetCorners[2].x = hdTableAnchors[next].x;
+    hdFacetCorners[2].y = hdTableAnchors[next].y;
+    fillFacet(ramp, cx, cy, hdFacetCorners, 3, 0.1);
+
+    hdFacetCorners[0].x = hdOuterAnchors[i].x;
+    hdFacetCorners[0].y = hdOuterAnchors[i].y;
+    hdFacetCorners[1].x = hdTableAnchors[next].x;
+    hdFacetCorners[1].y = hdTableAnchors[next].y;
+    hdFacetCorners[2].x = hdTableAnchors[i].x;
+    hdFacetCorners[2].y = hdTableAnchors[i].y;
+    fillFacet(ramp, cx, cy, hdFacetCorners, 3, -0.09);
+  }
+}
+
+/* The flat top face, brightest off centre toward the light. Most of the
+   brightness the player actually perceives comes from here. */
+function drawHdTable(ramp, cx, cy, radius, anchorCount) {
+  const hotX = cx - radius * 0.16;
+  const hotY = cy - radius * 0.19;
+
+  /* Stops short of the spark for the same reason the facets do. The
+     table is the brightest thing on the stone and it still has to be
+     recognisably red or green while it is doing it. */
+  const face = ctx.createRadialGradient(hotX, hotY, 0, cx, cy, radius * HD_TABLE_SCALE * 1.5);
+  face.addColorStop(0, rgbCss(sampleRamp(ramp, 0.9)));
+  face.addColorStop(0.42, rgbCss(sampleRamp(ramp, 0.66)));
+  face.addColorStop(1, rgbCss(sampleRamp(ramp, 0.44)));
+
+  ctx.beginPath();
+  ctx.moveTo(hdTableAnchors[0].x, hdTableAnchors[0].y);
+  for (let i = 1; i < anchorCount; i++) {
+    ctx.lineTo(hdTableAnchors[i].x, hdTableAnchors[i].y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = face;
+  ctx.fill();
+}
+
+/* The hairlines where facets meet. Cheap, and at board size they do
+   most of the work of saying this is cut glass. */
+function drawHdFacetEdges(radius, anchorCount) {
+  ctx.lineWidth = Math.max(0.6, radius * 0.02);
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.16)";
+
+  ctx.beginPath();
+  for (let i = 0; i < anchorCount; i++) {
+    ctx.moveTo(hdOuterAnchors[i].x, hdOuterAnchors[i].y);
+    ctx.lineTo(hdTableAnchors[i].x, hdTableAnchors[i].y);
+  }
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.moveTo(hdTableAnchors[0].x, hdTableAnchors[0].y);
+  for (let i = 1; i < anchorCount; i++) {
+    ctx.lineTo(hdTableAnchors[i].x, hdTableAnchors[i].y);
+  }
+  ctx.closePath();
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.26)";
+  ctx.stroke();
+}
+
+/* Depth on the shadow side, so the stone reads as a solid with a bottom
+   to it rather than a lit disc. */
+function drawHdPavilionShadow(deepColour, cx, cy, radius) {
+  const deep = hexToRgb(deepColour);
+  const shadowX = cx + radius * 0.42;
+  const shadowY = cy + radius * 0.48;
+
+  const shade = ctx.createRadialGradient(shadowX, shadowY, radius * 0.1, shadowX, shadowY, radius * 1.25);
+  shade.addColorStop(0, rgbaCss(deep, 0.5));
+  shade.addColorStop(1, rgbaCss(deep, 0));
+
+  ctx.fillStyle = shade;
+  ctx.fillRect(cx - radius * 1.3, cy - radius * 1.3, radius * 2.6, radius * 2.6);
+}
+
+/* Dispersion. Three blobs in hues spun off the base colour, added in
+   lighter mode so they brighten rather than tint. Held at low alpha on
+   purpose: the player has to be able to name the colour at a glance,
+   and a gem that has gone rainbow is a gem they cannot match. */
+function drawHdFire(colourIndex, cx, cy, radius) {
+  const baseHue = HD_FIRE_HUES[colourIndex];
+  const drift = Math.sin(game.time * 0.6) * 8;
+  const reach = radius * 0.62;
+
+  const hues = [baseHue - 46 + drift, baseHue + 46 - drift, baseHue + 128];
+  const angles = [2.5, 0.75, 4.4];
+  const alphas = [0.3, 0.27, 0.2];
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  for (let i = 0; i < hues.length; i++) {
+    const blobX = cx + Math.cos(angles[i]) * radius * 0.66;
+    const blobY = cy + Math.sin(angles[i]) * radius * 0.66;
+
+    const wash = ctx.createRadialGradient(blobX, blobY, 0, blobX, blobY, reach);
+    wash.addColorStop(0, "hsl(" + hues[i] + ", 100%, 62%)");
+    wash.addColorStop(1, "hsla(" + hues[i] + ", 100%, 62%, 0)");
+
+    ctx.globalAlpha = alphas[i];
+    ctx.beginPath();
+    ctx.arc(blobX, blobY, reach, 0, Math.PI * 2);
+    ctx.fillStyle = wash;
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+/* A bright bar crossing the stone once per cycle, clipped to the shape
+   so it never bleeds onto the board. */
+function drawHdGlint(cx, cy, radius, phase) {
+  const cyclePosition = ((game.time + phase) % HD_GLINT_PERIOD_SECONDS) / HD_GLINT_PERIOD_SECONDS;
+  if (cyclePosition > HD_GLINT_VISIBLE_FRACTION) return;
+
+  const sweep = cyclePosition / HD_GLINT_VISIBLE_FRACTION;
+  const travel = -radius * 1.5 + sweep * radius * 3;
+  const barWidth = radius * 0.55;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.translate(cx, cy);
+  ctx.rotate(-0.62);
+
+  const bar = ctx.createLinearGradient(travel - barWidth, 0, travel + barWidth, 0);
+  bar.addColorStop(0, "rgba(255, 255, 255, 0)");
+  bar.addColorStop(0.5, "rgba(255, 255, 255, 0.55)");
+  bar.addColorStop(1, "rgba(255, 255, 255, 0)");
+
+  ctx.fillStyle = bar;
+  ctx.fillRect(travel - barWidth, -radius * 1.6, barWidth * 2, radius * 3.2);
+  ctx.restore();
+}
+
+/* The girdle. Near white where the light lands at the top left, fading
+   out through the middle, picking the rim tone back up on the far side,
+   in place of Standard's flat white stroke. */
+function drawHdGirdle(rimColour, shape, cx, cy, radius, spin) {
+  const rim = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+  rim.addColorStop(0, "rgba(255, 255, 255, 0.92)");
+  rim.addColorStop(0.34, "rgba(255, 255, 255, 0.3)");
+  rim.addColorStop(0.62, "rgba(255, 255, 255, 0.1)");
+  rim.addColorStop(1, rgbaCss(hexToRgb(rimColour), 0.62));
+
+  ctx.strokeStyle = rim;
+  ctx.lineWidth = Math.max(1.4, radius * 0.075);
+  traceGemShape(shape, cx, cy, radius * 0.96, spin);
+  ctx.stroke();
+}
+
+/* The two highlights, plus a four point star sitting on the main one.
+   The star is what reads as shiny while the board is standing still,
+   between glints. */
+function drawHdSpecular(cx, cy, radius) {
+  ctx.beginPath();
+  ctx.ellipse(cx - radius * 0.3, cy - radius * 0.36, radius * 0.27, radius * 0.15, -0.7, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.62)";
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.ellipse(cx + radius * 0.28, cy + radius * 0.34, radius * 0.15, radius * 0.085, -0.7, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.24)";
+  ctx.fill();
+
+  const breath = 0.75 + Math.sin(game.time * 2.1) * 0.25;
+  const starX = cx - radius * 0.3;
+  const starY = cy - radius * 0.36;
+  const armLong = radius * 0.46 * breath;
+  const armShort = radius * 0.09 * breath;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+  ctx.beginPath();
+  ctx.moveTo(starX, starY - armLong);
+  ctx.quadraticCurveTo(starX + armShort, starY - armShort, starX + armLong, starY);
+  ctx.quadraticCurveTo(starX + armShort, starY + armShort, starX, starY + armLong);
+  ctx.quadraticCurveTo(starX - armShort, starY + armShort, starX - armLong, starY);
+  ctx.quadraticCurveTo(starX - armShort, starY - armShort, starX, starY - armLong);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+/* The flat gradient body the game shipped with, kept exactly as it
+   was. */
+function drawGemBodyStandard(cell, cx, cy, radius) {
+  const palette = GEM_COLOURS[cell.colour];
+
+  ctx.shadowColor = palette.glow;
+  ctx.shadowBlur = radius * 0.7;
+  traceGemShape(palette.shape, cx, cy, radius, cell.spin);
+
+  const body = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
+  body.addColorStop(0, palette.rim);
+  body.addColorStop(0.45, palette.core);
+  body.addColorStop(1, palette.glow);
+  ctx.fillStyle = body;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+  ctx.lineWidth = Math.max(1.5, radius * 0.09);
+  traceGemShape(palette.shape, cx, cy, radius * 0.97, cell.spin);
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.ellipse(cx - radius * 0.3, cy - radius * 0.36, radius * 0.26, radius * 0.16, -0.7, 0, Math.PI * 2);
+  ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+  ctx.fill();
+}
+
+/* The faceted body, painted bottom up: bloom, base, crown, table, facet
+   edges, pavilion shadow, fire, glint, girdle, highlights. Everything
+   from the base to the glint is clipped to the silhouette; only the
+   bloom sits outside it.
+
+   showGlint is passed rather than assumed because the goal line icons
+   are painted once and cached. A sweeping bar baked into a still would
+   sit frozen halfway across the icon forever. */
+function drawGemBodyHD(cell, cx, cy, radius, showGlint) {
+  const shape = GEM_COLOURS[cell.colour].shape;
+  const palette = HD_GEM_COLOURS[cell.colour];
+  const ramp = HD_RAMPS[cell.colour];
+
+  drawHdBloom(palette.glow, cx, cy, radius);
+
+  ctx.save();
+  ctx.shadowColor = palette.glow;
+  ctx.shadowBlur = radius * 0.85;
+  traceGemShape(shape, cx, cy, radius, cell.spin);
+  ctx.fillStyle = rgbCss(sampleRamp(ramp, 0.35));
+  ctx.fill();
+  ctx.restore();
+
+  const anchorCount = fillGemAnchors(shape, cx, cy, radius, cell.spin);
+
+  ctx.save();
+  traceGemShape(shape, cx, cy, radius, cell.spin);
+  ctx.clip();
+
+  drawHdCrown(ramp, cx, cy, anchorCount);
+  drawHdTable(ramp, cx, cy, radius, anchorCount);
+  drawHdFacetEdges(radius, anchorCount);
+  drawHdPavilionShadow(palette.deep, cx, cy, radius);
+  drawHdFire(cell.colour, cx, cy, radius);
+
+  if (showGlint === true) {
+    drawHdGlint(cx, cy, radius, cell.glintPhase);
+  }
+
+  ctx.restore();
+
+  drawHdGirdle(palette.rim, shape, cx, cy, radius, cell.spin);
+  drawHdSpecular(cx, cy, radius);
+}
+
 function drawBackdrop() {
+  if (graphics.mode === GRAPHICS_HD) {
+    drawBackdropHD();
+    return;
+  }
+  drawBackdropStandard();
+}
+
+function drawBackdropStandard() {
   const hueShift = (game.level - 1) * 26;
   const gradient = ctx.createLinearGradient(0, 0, 0, layout.height);
   gradient.addColorStop(0, "hsl(" + ((262 + hueShift) % 360) + ", 44%, 12%)");
@@ -5620,6 +6817,55 @@ function drawBackdrop() {
       const x = layout.originX + col * layout.cell;
       const y = layout.originY + row * layout.cell;
       roundedRect(x + 2, y + 2, layout.cell - 4, layout.cell - 4, layout.cell * 0.18);
+      ctx.stroke();
+    }
+  }
+}
+
+/* The tray. Darker and a good deal less saturated than Standard, which
+   is what gives the HD bloom somewhere to land, and each cell cut as a
+   recess rather than outlined: dark along the top edge fading to a lit
+   lip along the bottom, which is what a hole in a surface looks like
+   under a key light coming from above. The same light the stones are
+   cut for.
+
+   The level still tints it, so levels still feel different, but at a
+   third of the saturation Standard uses.
+
+   One gradient per row rather than one per cell. The lip is vertical
+   and every cell in a row shares a y, so seven cells share an object
+   and the frame builds nine of them instead of sixty three. */
+function drawBackdropHD() {
+  const hueShift = (game.level - 1) * 26;
+  const gradient = ctx.createLinearGradient(0, 0, 0, layout.height);
+  gradient.addColorStop(0, "hsl(" + ((262 + hueShift) % 360) + ", 30%, 7%)");
+  gradient.addColorStop(1, "hsl(" + ((228 + hueShift) % 360) + ", 34%, 4%)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, layout.width, layout.height);
+
+  const inset = 2;
+  const size = layout.cell - inset * 2;
+  const corner = layout.cell * 0.2;
+
+  ctx.lineWidth = 1;
+
+  for (let row = 0; row < ROWS; row++) {
+    const y = layout.originY + row * layout.cell + inset;
+
+    const lip = ctx.createLinearGradient(0, y, 0, y + size);
+    lip.addColorStop(0, "rgba(0, 0, 0, 0.55)");
+    lip.addColorStop(0.55, "rgba(0, 0, 0, 0.18)");
+    lip.addColorStop(1, "rgba(190, 174, 244, 0.17)");
+
+    for (let col = 0; col < COLS; col++) {
+      const x = layout.originX + col * layout.cell + inset;
+
+      roundedRect(x, y, size, size, corner);
+      ctx.fillStyle = "rgba(0, 0, 0, 0.34)";
+      ctx.fill();
+
+      roundedRect(x + 0.5, y + 0.5, size - 1, size - 1, corner);
+      ctx.strokeStyle = lip;
       ctx.stroke();
     }
   }
@@ -5693,35 +6939,20 @@ function drawStone(cell, cx, cy, radius) {
   ctx.restore();
 }
 
-function drawGem(cell, cx, cy, radius) {
-  const palette = GEM_COLOURS[cell.colour];
+/* The body is whichever appearance the Graphics setting is on, and the
+   marks that go over it are the same either way: a bomb reads as a bomb
+   and blight reads as blight whether the stone under it is flat or cut.
 
+   showGlint is false for the goal line icons, which are painted once
+   and kept. Everything else on the board passes true. */
+function drawGem(cell, cx, cy, radius, showGlint) {
   ctx.save();
 
-  /* Body */
-  ctx.shadowColor = palette.glow;
-  ctx.shadowBlur = radius * 0.7;
-  traceGemShape(palette.shape, cx, cy, radius, cell.spin);
-
-  const body = ctx.createLinearGradient(cx - radius, cy - radius, cx + radius, cy + radius);
-  body.addColorStop(0, palette.rim);
-  body.addColorStop(0.45, palette.core);
-  body.addColorStop(1, palette.glow);
-  ctx.fillStyle = body;
-  ctx.fill();
-  ctx.shadowBlur = 0;
-
-  /* Rim light */
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
-  ctx.lineWidth = Math.max(1.5, radius * 0.09);
-  traceGemShape(palette.shape, cx, cy, radius * 0.97, cell.spin);
-  ctx.stroke();
-
-  /* Highlight blob */
-  ctx.beginPath();
-  ctx.ellipse(cx - radius * 0.3, cy - radius * 0.36, radius * 0.26, radius * 0.16, -0.7, 0, Math.PI * 2);
-  ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-  ctx.fill();
+  if (graphics.mode === GRAPHICS_HD) {
+    drawGemBodyHD(cell, cx, cy, radius, showGlint);
+  } else {
+    drawGemBodyStandard(cell, cx, cy, radius);
+  }
 
   if (cell.special === "bomb") {
     drawBombMarks(cx, cy, radius);
@@ -5783,13 +7014,17 @@ function buildGoalIcon(paint) {
 }
 
 function goalGemIcon(colour) {
-  const key = "gem:" + colour + ":" + window.devicePixelRatio;
+  /* The appearance is part of the key, so switching between Standard
+     and HD gets a fresh picture rather than the one already cached, and
+     switching back reuses what was built the first time. */
+  const key = "gem:" + colour + ":" + graphics.mode + ":" + window.devicePixelRatio;
   const cached = goalIcons.get(key);
   if (cached !== undefined) return cached;
 
-  /* A gem at rest: no spin, no bomb or prism marks, no blight. */
-  const sample = { colour: colour, spin: 0, special: "none", blighted: false };
-  const icon = buildGoalIcon(function (x, y, radius) { drawGem(sample, x, y, radius); });
+  /* A gem at rest: no spin, no bomb or prism marks, no blight, and no
+     glint, because a still cannot carry a sweep. */
+  const sample = { colour: colour, spin: 0, special: "none", blighted: false, glintPhase: 0 };
+  const icon = buildGoalIcon(function (x, y, radius) { drawGem(sample, x, y, radius, false); });
 
   goalIcons.set(key, icon);
   return icon;
@@ -5913,7 +7148,7 @@ function drawCells() {
       if (cell.kind === "stone") {
         drawStone(cell, centre.x, y, radius);
       } else {
-        drawGem(cell, centre.x, y, radius);
+        drawGem(cell, centre.x, y, radius, true);
       }
     }
   }
@@ -6468,7 +7703,64 @@ function update(dt) {
     if (boardIsSettled() === true) {
       checkLevelState();
     }
+  } else if (game.phase === "shuffling") {
+    updateShuffleFill(dt);
   }
+}
+
+/* Drives the empty and the refill. The shrink is done here rather than
+   cell by cell because every tile leaves together on one clock. Once
+   the last row has finished growing the board goes back to the player.
+
+   The level cannot end here: a shuffle costs charge rather than a
+   move, and it changes no goal progress, so there is nothing for
+   checkLevelState to find. */
+function updateShuffleFill(dt) {
+  game.shuffleTime += dt;
+
+  const fillStart = SHUFFLE_SHRINK_SECONDS + SHUFFLE_BEAT_SECONDS;
+
+  /* Everything shrinks away together, then the board sits empty for a
+     beat so the clear registers before the fill starts. */
+  if (game.shuffleTime < fillStart) {
+    let remaining = 1 - game.shuffleTime / SHUFFLE_SHRINK_SECONDS;
+    if (remaining < 0) remaining = 0;
+
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        cellAt(row, col).scale = remaining;
+      }
+    }
+    return;
+  }
+
+  /* One note per row as it arrives, stepping up a semitone each time,
+     so the fill sounds like it is being dealt out. */
+  const secondsFilling = game.shuffleTime - fillStart;
+  const rowsDue = Math.floor(secondsFilling / SHUFFLE_ROW_STEP_SECONDS) + 1;
+
+  while (game.shuffleRowsTicked < rowsDue && game.shuffleRowsTicked < ROWS) {
+    const semitone = game.shuffleRowsTicked;
+    playTone(420 * Math.pow(2, semitone / 12), 0.09, "triangle", 0.11);
+    game.shuffleRowsTicked++;
+  }
+
+  if (shuffleFillIsDone() === true) {
+    game.phase = "idle";
+    resetHintTimer();
+    refreshHud();
+  }
+}
+
+function shuffleFillIsDone() {
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.spawnDelay > 0) return false;
+      if (cell.scale < 1) return false;
+    }
+  }
+  return true;
 }
 
 function updateCellAnimations(dt) {
@@ -6505,13 +7797,26 @@ function updateCellAnimations(dt) {
         if (cell.blightShow > 1) cell.blightShow = 1;
       }
 
-      if (cell.scale > 1) {
-        cell.scale -= dt * 2.4;
-        if (cell.scale < 1) cell.scale = 1;
-      }
-      if (cell.scale < 1) {
-        cell.scale += dt * 4;
-        if (cell.scale > 1) cell.scale = 1;
+      /* A tile waiting its turn in a shuffle refill holds at nothing
+         until its row comes up. Once it does, it grows in a little
+         faster than a normal spawn, which keeps the fill crisp. The
+         whole board is in the shuffle together, so nothing else is
+         growing while that phase runs. */
+      if (cell.spawnDelay > 0) {
+        cell.spawnDelay -= dt;
+        if (cell.spawnDelay < 0) cell.spawnDelay = 0;
+      } else {
+        let growRate = SPAWN_GROW_RATE;
+        if (game.phase === "shuffling") growRate = SHUFFLE_GROW_RATE;
+
+        if (cell.scale > 1) {
+          cell.scale -= dt * 2.4;
+          if (cell.scale < 1) cell.scale = 1;
+        }
+        if (cell.scale < 1) {
+          cell.scale += dt * growRate;
+          if (cell.scale > 1) cell.scale = 1;
+        }
       }
     }
   }
@@ -6630,44 +7935,76 @@ function renderGoalLine() {
   goalText.textContent = game.goal.label;
 
   if (game.goal.kind === "colour") {
-    goalText.appendChild(goalGemIcon(game.goal.colour));
+    applyGoalAccent(HD_GEM_COLOURS[game.goal.colour]);
+    goalText.appendChild(socketed(goalGemIcon(game.goal.colour)));
     return;
   }
 
+  applyGoalAccent(GOAL_ACCENT_NEUTRAL);
+
   if (game.goal.kind === "stone") {
-    goalText.appendChild(goalStoneIcon());
+    goalText.appendChild(socketed(goalStoneIcon()));
   }
+}
+
+/* The HD chrome carries exactly one saturated colour and it is borrowed
+   from the stone the level is asking for, so the only thing on screen
+   with real colour in it is always pointing at the target. Standard
+   declares none of these variables and is unaffected by them. */
+function applyGoalAccent(palette) {
+  app.style.setProperty("--goal-deep", palette.deep);
+  app.style.setProperty("--goal-core", palette.core);
+  app.style.setProperty("--goal-rim", palette.rim);
+}
+
+/* HD sets the icon into a recess, the way a stone sits in a ring. The
+   wrapper goes in on both appearances so the goal line is built the
+   same way either way; on Standard it carries no styling and simply
+   holds the icon where the icon already was. */
+function socketed(icon) {
+  const socket = document.createElement("span");
+  socket.className = "goalSocket";
+  socket.appendChild(icon);
+  return socket;
 }
 
 /* Steps a number's font down until it fits the width its box gives it.
    Four digit levels and seven figure scores are the cases that need it:
    the number stays whole and readable instead of being cut off. */
-function fitValueText(element, maxFontSize) {
-  element.style.fontSize = maxFontSize + "px";
+function fitValueText(element) {
+  element.style.fontSize = "";
 
-  let size = maxFontSize;
+  let size = parseFloat(window.getComputedStyle(element).fontSize);
   while (size > 9 && element.scrollWidth > element.clientWidth) {
     size--;
     element.style.fontSize = size + "px";
   }
 }
 
-const STAT_FONT_SIZE = 18;
+
 
 function refreshHud() {
   scoreValue.textContent = String(game.score);
   movesValue.textContent = String(Math.max(0, game.moves));
   levelValue.textContent = String(game.level);
 
-  fitValueText(scoreValue, STAT_FONT_SIZE);
-  fitValueText(movesValue, STAT_FONT_SIZE);
-  fitValueText(levelValue, STAT_FONT_SIZE);
+  fitValueText(scoreValue);
+  fitValueText(movesValue);
+  fitValueText(levelValue);
 
   if (game.moves <= 4) {
     movesStat.classList.add("low");
   } else {
     movesStat.classList.remove("low");
   }
+
+  /* The HD stripe down the edge of the moves box. Cold with the budget
+     full, alarm with it empty, and it only starts moving once there are
+     MOVES_WARN_FROM left. Standard draws no stripe and ignores this. */
+  const spent = MOVES_WARN_FROM - Math.max(0, game.moves);
+  const pressure = Math.max(0, Math.min(1, spent / MOVES_WARN_FROM));
+  const stripe = mixRgb(hexToRgb(MOVES_STRIPE_CALM), hexToRgb(MOVES_STRIPE_ALARM), pressure);
+  movesStat.style.setProperty("--moves-stripe", rgbCss(stripe));
 
   renderGoalLine();
 
@@ -6708,9 +8045,18 @@ function buildItemBar() {
     const button = document.createElement("button");
     button.className = "itemBtn";
     button.dataset.item = item.id;
+    button.dataset.cost = String(item.cost);
+
+    /* Both readings of the cost are in the markup and the appearance
+       picks one. Standard reads it inside the name, "SHUFFLE 8", the way
+       it always has. HD hides that copy, puts the number in the corner
+       and fills the button up to it. */
     button.innerHTML =
+      "<span class='fuel'></span>" +
+      "<span class='cost'>" + item.cost + "</span>" +
       "<span class='glyph'>" + item.glyph + "</span>" +
-      "<span class='name'>" + item.label + " " + item.cost + "</span>";
+      "<span class='name'>" + item.label +
+        "<span class='inlineCost'> " + item.cost + "</span></span>";
 
     button.addEventListener("click", function () {
       ensureAudio();
@@ -6751,6 +8097,12 @@ function updateItemBar() {
     }
 
     if (hintPointsAtItem(id) === true) button.classList.add("hinted");
+
+    /* How close the meter is to paying for this one, which is what HD
+       fills the button with. Standard never shows it. */
+    const cost = parseInt(button.dataset.cost, 10);
+    const towards = Math.min(1, game.charge / cost);
+    button.style.setProperty("--fuel", Math.round(towards * 100) + "%");
   }
 }
 
@@ -6993,6 +8345,14 @@ function refreshSettingsPage() {
   const sfxPercent = Math.round(sound.volume * 100);
   const musicPercent = Math.round(music.volume * 100);
 
+  if (graphics.mode === GRAPHICS_HD) {
+    graphicsToggle.textContent = "Graphics: HD";
+    graphicsNote.textContent = "Cut gems with facets, dispersion and glints.";
+  } else {
+    graphicsToggle.textContent = "Graphics: Standard";
+    graphicsNote.textContent = "Flat gems. Lighter work for an older device.";
+  }
+
   /* Until the player picks a number, the slider shows the one the level
      is using and says where it came from. */
   hintToggle.textContent = hints.enabled === true ? "Hints: On" : "Hints: Off";
@@ -7065,10 +8425,16 @@ menuResume.addEventListener("click", closeMenu);
    away from a player who has just tapped it. */
 hintBtn.addEventListener("click", function () {
   ensureAudio();
+
+  /* Tapping while the trail is up puts it away and leaves the bulb on:
+     the move has not gone anywhere, it is just off the board. */
   if (hints.showing === true) {
-    resetHintTimer();
+    hints.showing = false;
+    hints.idleSeconds = 0;
+    updateItemBar();
     return;
   }
+
   showHint();
 });
 
@@ -7091,6 +8457,36 @@ hintSlider.addEventListener("change", saveSettings);
 
 menuSettings.addEventListener("click", function () { showSettingsPage("menu"); });
 settingsBack.addEventListener("click", leaveSettingsPage);
+
+/* The chrome is a class on #app, so switching appearance is one class
+   and the whole stylesheet follows. The board is redrawn every frame so
+   the stones and the tray change on their own; the HUD is DOM and has
+   to be asked, which is what refreshHud does. It rebuilds the goal line
+   from the icon cache, which is keyed by appearance, and puts the fuel
+   and the stripe back where the new appearance wants them. */
+function applyGraphicsMode() {
+  if (graphics.mode === GRAPHICS_HD) {
+    app.classList.add("hdChrome");
+  } else {
+    app.classList.remove("hdChrome");
+  }
+
+  /* Nothing to refresh before the board exists. Startup calls refreshHud
+     itself once it does. */
+  if (boardReady === true) refreshHud();
+}
+
+graphicsToggle.addEventListener("click", function () {
+  if (graphics.mode === GRAPHICS_HD) {
+    graphics.mode = GRAPHICS_STANDARD;
+  } else {
+    graphics.mode = GRAPHICS_HD;
+  }
+
+  applyGraphicsMode();
+  refreshSettingsPage();
+  saveSettings();
+});
 
 sfxToggle.addEventListener("click", function () {
   sound.enabled = sound.enabled === false;
@@ -7211,9 +8607,57 @@ document.addEventListener("fullscreenchange", function () {
    measurement. */
 let boardReady = false;
 
+/* How tall the top of the screen comes out in each of its two layouts.
+   Both are read once, by wearing each in turn, so that choosing between
+   them later is arithmetic rather than a round of measure, swap and
+   measure again. */
+let tallHudHeight = 0;
+let compactHudHeight = 0;
+
+function measureHudHeights() {
+  const wasCompact = app.classList.contains("compactHud");
+
+  app.classList.remove("compactHud");
+  tallHudHeight = hud.getBoundingClientRect().height;
+
+  app.classList.add("compactHud");
+  compactHudHeight = hud.getBoundingClientRect().height;
+
+  if (wasCompact === false) app.classList.remove("compactHud");
+}
+
+/* The board is nine rows of seven, and on a tall phone it is its width
+   that decides how big a cell can be: there is height left over that no
+   number of rows can use. Where that is true the roomy layout is free,
+   because the height it takes was never going to reach the board.
+
+   So the question is only ever whether the board would still be as wide
+   as it can be. If it would, wear the roomy one. If the extra height
+   would start eating into cell size, drop to the compact one.
+
+   The test is written against the roomy layout whichever one is being
+   worn at the time, so it lands on the same answer either way and
+   cannot flip back and forth between the two. */
+function chooseHudSize() {
+  const rect = stage.getBoundingClientRect();
+  const worn = app.classList.contains("compactHud") ? compactHudHeight : tallHudHeight;
+  const stageIfTall = rect.height + worn - tallHudHeight;
+
+  const cellByWidth = Math.floor(rect.width / COLS);
+  const cellByHeightIfTall = Math.floor(stageIfTall / ROWS);
+
+  if (cellByHeightIfTall >= cellByWidth) {
+    app.classList.remove("compactHud");
+  } else {
+    app.classList.add("compactHud");
+  }
+}
+
 function measureStage() {
   const rect = stage.getBoundingClientRect();
   if (rect.width < 1 || rect.height < 1) return;
+
+  chooseHudSize();
 
   if (boardReady === false) {
     resizeCanvas();
@@ -7243,8 +8687,10 @@ document.addEventListener("dblclick", function (event) { event.preventDefault();
 
 game.bestScore = loadBest();
 loadSettings();
+applyGraphicsMode();
 refreshSettingsPage();
 buildItemBar();
+measureHudHeights();
 measureStage();
 showTitleCard();
 window.requestAnimationFrame(frame);
