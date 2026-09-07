@@ -199,15 +199,20 @@
 
   #hintBtn:active { background: rgba(255, 255, 255, 0.16); }
 
-  /* Lit while a hint is pointing at it. */
   /* The bulb is drawn rather than typed, because a light that has to
      come on in yellow needs a colour something else can set. The glass
      and the two lines of the base take their colour from the button, so
-     lighting it is a single property. */
+     lighting it is a single property.
+
+     The viewBox is cropped to what the artwork actually covers, stroke
+     included. The 24 by 24 box the icon was drawn on wasted about a
+     seventh of its width and a quarter of its height on empty margin and
+     sat the bulb off centre. Cropping it fills more of the button while
+     the button stays exactly the size it was. */
   #hintBtn svg {
     display: block;
-    width: 21px;
-    height: 21px;
+    width: 27px;
+    height: 27px;
     margin: 0 auto;
     fill: none;
     stroke: currentColor;
@@ -216,28 +221,37 @@
     stroke-linejoin: round;
   }
 
-  #app.compactHud #hintBtn svg { width: 18px; height: 18px; }
+  #app.compactHud #hintBtn svg { width: 23px; height: 23px; }
 
-  /* Dark and dormant while there is nothing to say. The rays stay drawn
-     so the shape still reads as a light bulb, but they sit well back
-     until there is something to light them up for. */
-  #hintBtn { color: var(--ink-dim); }
+  /* Every state below is written as "#app #hintBtn", two ids deep. The
+     HD chrome sets a colour on "#app.hdChrome button", which outweighs a
+     plain id and used to pin the bulb to the chrome's white in every
+     state: HD never dimmed it and never lit it yellow. Two ids outweigh
+     the chrome, so both appearances now behave the same. */
 
-  /* Dimmed with a colour rather than with opacity. Anything below full
-     opacity puts the element on its own composited layer, and inside a
-     fixed position app that leaves a seam down the edge of the screen
-     where the browser fails to repaint. */
-  #hintBtn .bulbRays { stroke: #3f3a52; }
-  #hintBtn.lit .bulbRays { stroke: currentColor; }
+  /* A plain white bulb with no rays while there is nothing to say, so an
+     unlit bulb cannot be read as a lit one. */
+  #app #hintBtn { color: var(--ink); }
+
+  /* Visibility rather than opacity, because anything below full opacity
+     puts the element on its own composited layer, and inside a fixed
+     position app that leaves a seam down the edge of the screen where
+     the browser fails to repaint. Visibility also holds the glyph's
+     place in the box, so the bulb stays put when it lights. */
+  #app #hintBtn .bulbRays { visibility: hidden; stroke: currentColor; }
 
   /* Lit the moment a hint is ready, which is not the same as the hint
      being drawn on the board. The player can put the trail away and the
-     bulb stays on, because the suggestion is still there to ask for. */
-  #hintBtn.lit { color: #ffd23f; }
+     bulb stays on, because the suggestion is still there to ask for.
+
+     The colour and the six rays arrive together on purpose. The rays say
+     "lit" to a player who cannot tell the yellow from the white. */
+  #app #hintBtn.lit { color: #ffd23f; }
+  #app #hintBtn.lit .bulbRays { visibility: visible; }
 
   /* A solid colour, not a translucent one. Nothing in this button is
      allowed to need a layer of its own. */
-  #hintBtn.lit .bulbGlass { fill: #5c4d1e; }
+  #app #hintBtn.lit .bulbGlass { fill: #5c4d1e; }
 
   /* Same height as the stat boxes above, so the top of the screen
      reads as one block. */
@@ -606,6 +620,15 @@
   /* A muted channel keeps its slider on screen so the level stays
      readable, and dims it to say it is doing nothing right now. */
   .settingGroup.off .sliderRow { opacity: 0.38; }
+
+  /* Shimmer lives in the graphics group because it only means anything
+     on HD, so it sits under the graphics note and needs a gap to stand
+     it off the line above. */
+  #shimmerToggle { margin-top: 9px; }
+
+  /* Standard has no shimmer to switch, so the button goes quiet. This is
+     the only disabled button in the game. */
+  .settingGroup .menuItem:disabled { opacity: 0.38; cursor: default; }
 
   input[type="range"] {
     flex: 1 1 auto;
@@ -1232,7 +1255,7 @@
           <span class="label">Level</span>
           <span class="value" id="levelValue">1</span>
         </div>
-        <button id="hintBtn" title="Hint" aria-label="Show a hint"><svg viewBox="0 0 24 24" aria-hidden="true"><g class="bulbRays"><path d="M7.33 4.33 5.35 2.35"/><path d="M5.4 9H2.6"/><path d="M7.33 13.67 5.35 15.65"/><path d="M16.67 4.33 18.65 2.35"/><path d="M18.6 9h2.8"/><path d="M16.67 13.67 18.65 15.65"/></g><circle class="bulbGlass" cx="12" cy="9" r="4.7"/><path d="M9.6 15.4h4.8"/><path d="M10.5 17.9h3"/></svg></button>
+        <button id="hintBtn" title="Hint" aria-label="Show a hint"><svg viewBox="1.4 1.15 21.2 17.7" aria-hidden="true"><g class="bulbRays"><path d="M7.33 4.33 5.35 2.35"/><path d="M5.4 9H2.6"/><path d="M7.33 13.67 5.35 15.65"/><path d="M16.67 4.33 18.65 2.35"/><path d="M18.6 9h2.8"/><path d="M16.67 13.67 18.65 15.65"/></g><circle class="bulbGlass" cx="12" cy="9" r="4.7"/><path d="M9.6 15.4h4.8"/><path d="M10.5 17.9h3"/></svg></button>
       </div>
     </div>
     <div id="goalBar">
@@ -1266,6 +1289,8 @@
           <div class="settingGroup" id="graphicsGroup">
             <button class="menuItem" id="graphicsToggle">Graphics: HD</button>
             <p class="settingNote" id="graphicsNote"></p>
+            <button class="menuItem" id="shimmerToggle">Shimmer: On</button>
+            <p class="settingNote" id="shimmerNote"></p>
           </div>
 
           <div class="settingGroup" id="hintGroup">
@@ -1413,6 +1438,24 @@ const GOAL_ACCENT_NEUTRAL = { deep: "#2d2748", core: "#9c93bd", rim: "#d8d0f0" }
 const graphics = {
   mode: GRAPHICS_HD
 };
+
+/* The HD stones move in three ways at once: a bar sweeping across each
+   one, a star breathing on the highlight, and a slow hue wander in the
+   dispersion. Together that is the shimmer, and on a board of sixty odd
+   gems it is enough motion to give some players a headache. The setting
+   stops all three.
+
+   Switching it off pins those values where they can be pinned, so a
+   still gem is the same cut stone with the movement taken out of it. The
+   sweep is the exception. A bar crossing the stone has no still frame
+   worth holding, so it is simply not drawn. */
+const shimmer = {
+  enabled: true
+};
+
+/* Where the highlight star is held while the shimmer is off. Full size,
+   so a still board still reads as cut stone. */
+const HD_STAR_STILL = 1;
 
 /* The key light every HD facet is shaded against. Up and to the left,
    the direction the highlight blob already implied, so nothing in the
@@ -1629,7 +1672,11 @@ const hints = {
   idleSeconds: 0,
   move: null,
   ready: false,      // a move is worked out and the bulb is lit
-  showing: false     // the trail for it is drawn on the board
+  showing: false,    // the trail for it is drawn on the board
+
+  /* Whether this board has been tested for the last move case yet. One
+     test per board, armed again by clearHint. */
+  lastChanceChecked: false
 };
 
 /* ------------------------------------------------------------------
@@ -1677,6 +1724,8 @@ const settingsPage = document.getElementById("settingsPage");
 const settingsBack = document.getElementById("settingsBack");
 const graphicsToggle = document.getElementById("graphicsToggle");
 const graphicsNote = document.getElementById("graphicsNote");
+const shimmerToggle = document.getElementById("shimmerToggle");
+const shimmerNote = document.getElementById("shimmerNote");
 const musicNote = document.getElementById("musicNote");
 const sfxGroup = document.getElementById("sfxGroup");
 const sfxToggle = document.getElementById("sfxToggle");
@@ -4784,18 +4833,42 @@ function bestBombMove() {
   };
 }
 
+/* The one suggestion the game makes from two places, so it is written
+   once. There is nothing on the board to point at: the answer is a
+   button, and drawItemHint prints the caption on its own. */
+function buyMovesHint() {
+  return {
+    kind: "item",
+    itemId: "moves",
+    target: null,
+    goalProgress: 0,
+    caption: "BUY MORE MOVES"
+  };
+}
+
+/* The last move, with the goal out of reach of anything linkable and the
+   charge sitting there to buy a way out. This is the one hint the player
+   has no time to wait for. The idle delay would land after they had
+   already played and lost the level, so updateHint shows this one the
+   moment the board settles.
+
+   The two cheap tests come first on purpose. findLinkMove walks the whole
+   grid, and both of these are false on every move but the last, so the
+   scan almost never runs. */
+function lastChanceMovesHint() {
+  if (game.moves > 1) return null;
+  if (canAfford("moves") === false) return null;
+  if (findLinkMove().bestGoalProgress >= goalRemaining()) return null;
+
+  return buyMovesHint();
+}
+
 function findItemMove(linkResult) {
   /* Running out of moves ends the level whatever else is on the board,
      so on the last one that comes before anything else. */
   if (game.moves <= 1 && canAfford("moves") === true) {
     if (linkResult.bestGoalProgress < goalRemaining()) {
-      return {
-        kind: "item",
-        itemId: "moves",
-        target: null,
-        goalProgress: 0,
-        caption: "BUY MORE MOVES"
-      };
+      return buyMovesHint();
     }
   }
 
@@ -4876,12 +4949,14 @@ function showHint() {
 }
 
 /* The board has changed, so whatever was worked out about it no longer
-   holds and the bulb goes out with it. */
+   holds and the bulb goes out with it. The last move test is armed again
+   here too, because a new board is a new answer to it. */
 function clearHint() {
   hints.move = null;
   hints.ready = false;
   hints.showing = false;
   hints.idleSeconds = 0;
+  hints.lastChanceChecked = false;
   refreshHintButton();
 }
 
@@ -4909,6 +4984,23 @@ function updateHint(dt) {
 
   if (hints.ready === true) return;
   if (hints.enabled === false) return;
+
+  /* Tested once per board rather than once per frame, because the scan
+     behind it walks the whole grid. Everything above this line means the
+     player is sitting looking at a settled board, so a hint raised here
+     is one they can actually see. */
+  if (hints.lastChanceChecked === false) {
+    hints.lastChanceChecked = true;
+
+    const urgent = lastChanceMovesHint();
+    if (urgent !== null) {
+      /* Handed over already worked out, so showHint uses this one and
+         leaves the board alone instead of scanning it a second time. */
+      hints.move = urgent;
+      showHint();
+      return;
+    }
+  }
 
   hints.idleSeconds += dt;
   if (hints.idleSeconds < hintDelaySeconds()) return;
@@ -5244,7 +5336,7 @@ function saveSettings() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 3,
+    version: 4,
     sfxEnabled: sound.enabled,
     sfxVolume: sound.volume,
     musicEnabled: music.enabled,
@@ -5252,7 +5344,8 @@ function saveSettings() {
     hintsEnabled: hints.enabled,
     hintDelayChosen: hints.delayChosen,
     hintDelaySeconds: hints.delaySeconds,
-    graphicsMode: graphics.mode
+    graphicsMode: graphics.mode,
+    shimmerEnabled: shimmer.enabled
   };
 
   window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
@@ -5270,7 +5363,8 @@ function saveSettings() {
    was nothing to answer, so the hint helper keeps its own defaults.
    Version 2 is the same story one setting later: it knows about hints
    and knows nothing about graphics, so graphics keeps its own default,
-   which is HD.
+   which is HD. Version 3 knows about graphics and nothing about the
+   shimmer, so the shimmer keeps its own default, which is on.
 
    A payload under a version this build does not know is treated as
    absent, the same way an old save is. A payload under a version it
@@ -5283,7 +5377,8 @@ function loadSettings() {
   if (raw === null) return;
 
   const payload = JSON.parse(raw);
-  if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3) return;
+  if (payload.version !== 1 && payload.version !== 2 &&
+      payload.version !== 3 && payload.version !== 4) return;
 
   sound.enabled = storedSwitch(payload.sfxEnabled, "sfxEnabled");
   sound.volume = storedLevel(payload.sfxVolume, "sfxVolume");
@@ -5299,6 +5394,10 @@ function loadSettings() {
   if (payload.version === 2) return;
 
   graphics.mode = storedGraphicsMode(payload.graphicsMode, "graphicsMode");
+
+  if (payload.version === 3) return;
+
+  shimmer.enabled = storedSwitch(payload.shimmerEnabled, "shimmerEnabled");
 }
 
 function storedGraphicsMode(value, fieldName) {
@@ -6618,8 +6717,12 @@ function drawHdPavilionShadow(deepColour, cx, cy, radius) {
    and a gem that has gone rainbow is a gem they cannot match. */
 function drawHdFire(colourIndex, cx, cy, radius) {
   const baseHue = HD_FIRE_HUES[colourIndex];
-  const drift = Math.sin(game.time * 0.6) * 8;
   const reach = radius * 0.62;
+
+  let drift = 0;
+  if (shimmer.enabled === true) {
+    drift = Math.sin(game.time * 0.6) * 8;
+  }
 
   const hues = [baseHue - 46 + drift, baseHue + 46 - drift, baseHue + 128];
   const angles = [2.5, 0.75, 4.4];
@@ -6701,7 +6804,11 @@ function drawHdSpecular(cx, cy, radius) {
   ctx.fillStyle = "rgba(255, 255, 255, 0.24)";
   ctx.fill();
 
-  const breath = 0.75 + Math.sin(game.time * 2.1) * 0.25;
+  let breath = HD_STAR_STILL;
+  if (shimmer.enabled === true) {
+    breath = 0.75 + Math.sin(game.time * 2.1) * 0.25;
+  }
+
   const starX = cx - radius * 0.3;
   const starY = cy - radius * 0.36;
   const armLong = radius * 0.46 * breath;
@@ -6784,7 +6891,7 @@ function drawGemBodyHD(cell, cx, cy, radius, showGlint) {
   drawHdPavilionShadow(palette.deep, cx, cy, radius);
   drawHdFire(cell.colour, cx, cy, radius);
 
-  if (showGlint === true) {
+  if (showGlint === true && shimmer.enabled === true) {
     drawHdGlint(cx, cy, radius, cell.glintPhase);
   }
 
@@ -7016,8 +7123,12 @@ function buildGoalIcon(paint) {
 function goalGemIcon(colour) {
   /* The appearance is part of the key, so switching between Standard
      and HD gets a fresh picture rather than the one already cached, and
-     switching back reuses what was built the first time. */
-  const key = "gem:" + colour + ":" + graphics.mode + ":" + window.devicePixelRatio;
+     switching back reuses what was built the first time. The shimmer
+     setting is in there for the same reason: the still bakes in whatever
+     size the star and whatever hue the dispersion held when it was
+     drawn. */
+  const key = "gem:" + colour + ":" + graphics.mode + ":" + shimmer.enabled +
+    ":" + window.devicePixelRatio;
   const cached = goalIcons.get(key);
   if (cached !== undefined) return cached;
 
@@ -8353,6 +8464,17 @@ function refreshSettingsPage() {
     graphicsNote.textContent = "Flat gems. Lighter work for an older device.";
   }
 
+  /* The shimmer is HD's alone, so on Standard the button goes quiet and
+     the note says why, in place of a switch that would do nothing. */
+  shimmerToggle.textContent = shimmer.enabled === true ? "Shimmer: On" : "Shimmer: Off";
+  shimmerToggle.disabled = graphics.mode !== GRAPHICS_HD;
+
+  if (graphics.mode === GRAPHICS_HD) {
+    shimmerNote.textContent = "Sweeping light and a breathing highlight on every stone.";
+  } else {
+    shimmerNote.textContent = "Standard gems hold still already.";
+  }
+
   /* Until the player picks a number, the slider shows the one the level
      is using and says where it came from. */
   hintToggle.textContent = hints.enabled === true ? "Hints: On" : "Hints: Off";
@@ -8484,6 +8606,18 @@ graphicsToggle.addEventListener("click", function () {
   }
 
   applyGraphicsMode();
+  refreshSettingsPage();
+  saveSettings();
+});
+
+shimmerToggle.addEventListener("click", function () {
+  shimmer.enabled = shimmer.enabled === false;
+
+  /* The goal line icon is cached under the shimmer setting, so the line
+     has to be rebuilt to pick up the picture drawn under the new one.
+     Nothing to rebuild before the board exists. */
+  if (boardReady === true) refreshHud();
+
   refreshSettingsPage();
   saveSettings();
 });
