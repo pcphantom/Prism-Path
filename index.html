@@ -11844,11 +11844,13 @@ function leaveSettingsPage() {
   showMenuMain();
 }
 
-function toggleFullscreen() {
+async function toggleFullscreen() {
   if (document.fullscreenElement === null) {
-    document.documentElement.requestFullscreen();
+    await document.documentElement.requestFullscreen();
+    await requestPortraitLock();
+    measureStageAfterTurn();
   } else {
-    document.exitFullscreen();
+    await document.exitFullscreen();
   }
 }
 
@@ -12148,56 +12150,51 @@ function menuBack() {
 
 /* =====================================================================
    OrientationHandler
-   Owns: asking the browser to keep the game in portrait, and measuring
-   the stage again once the phone has finished turning.
-   Stays out of: layout, drawing and input. Nothing here rotates
-   anything itself, which is why none of those have to know it exists.
-
-   The board is seven columns by nine rows, so portrait is the only
-   shape it fits. The request names the portrait group instead of one
-   specific way up, and that is the whole trick: the group covers both
-   ways up, so a phone held upside down turns the game with it and stays
-   readable, while the two landscape orientations stay refused.
-
-   A browser that will not take the request is left alone on purpose.
-   The game goes on reflowing to whatever orientation it is given,
-   exactly as it did before this module existed.
+   Owns: a portrait-only request after fullscreen entry, and a delayed
+   measurement after orientation changes. Portrait includes the reverse
+   orientation on devices that support it. A refused request leaves the
+   browser's orientation behavior alone.
+   Stays out of: startup, layout, drawing, input and on-screen messages.
    ===================================================================== */
 
 const GAME_ORIENTATION = "portrait";
 
-const screenOrientationSupported = typeof window.screen.orientation === "object";
+const screenOrientationSupported = window.screen.orientation !== undefined &&
+  window.screen.orientation !== null;
 const orientationLockSupported = screenOrientationSupported === true &&
   typeof window.screen.orientation.lock === "function";
 
-function requestPortraitLock() {
+async function requestPortraitLock() {
   if (orientationLockSupported === false) return;
+  // Fullscreen may have ended while its entry promise was settling.
+  if (document.fullscreenElement === null) return;
 
-  /* Two browsers turn this down, and both turn it down by rejecting:
-     Chrome on Android unless the document is fullscreen, and desktop
-     browsers always. A refusal is the browser's answer about what it
-     will allow, and there is nothing the game or the player can do
-     about it, so it is taken and no more is made of it. Catching it is
-     what keeps an expected answer from being reported as a fault. */
-  window.screen.orientation.lock(GAME_ORIENTATION).catch(function () {});
+  try {
+    await window.screen.orientation.lock(GAME_ORIENTATION);
+  } catch (refusal) {
+    /* Unsupported requests and a document leaving fullscreen need no UI.
+       Unexpected programming failures still reach developer tools. */
+    if (refusal.name === "NotSupportedError" || refusal.name === "SecurityError" ||
+        refusal.name === "AbortError" || refusal.name === "InvalidStateError") return;
+    throw refusal;
+  }
 }
 
-/* A phone reports its old viewport size for a moment after it turns, so
-   the second measurement waits for the new one to land. The stage's own
-   resize observer sees the turn as well and can see it halfway through,
-   which is why this one exists at all.
+/* Preserve the original delayed measurement as well as ResizeObserver.
+   Both orientation events can report the same turn, so share one timer. */
+let orientationMeasureTimer = null;
 
-   screen.orientation carries the current event. window.orientationchange
-   is the predecessor it replaced, still fired everywhere and still the
-   only one iOS Safari before 16.4 has, so that is where it is used. */
 function measureStageAfterTurn() {
-  window.setTimeout(measureStage, 200);
+  window.clearTimeout(orientationMeasureTimer);
+  orientationMeasureTimer = window.setTimeout(function () {
+    orientationMeasureTimer = null;
+    measureStage();
+  }, 200);
 }
 
+window.addEventListener("orientationchange", measureStageAfterTurn);
 if (screenOrientationSupported === true) {
   window.screen.orientation.addEventListener("change", measureStageAfterTurn);
-} else {
-  window.addEventListener("orientationchange", measureStageAfterTurn);
 }
 
 const fullscreenSupported = typeof document.documentElement.requestFullscreen === "function";
@@ -12205,11 +12202,6 @@ const fullscreenSupported = typeof document.documentElement.requestFullscreen ==
 document.addEventListener("fullscreenchange", function () {
   window.setTimeout(measureStage, 120);
   refreshFullscreenLabels();
-
-  /* Chrome on Android only accepts the orientation request while the
-     document is fullscreen, so entering fullscreen is the one moment
-     worth asking again. */
-  if (document.fullscreenElement !== null) requestPortraitLock();
 });
 
 /* ------------------------------------------------------------------
@@ -12302,7 +12294,6 @@ BackgroundHandler.init();
 applyGraphicsMode();
 refreshSettingsPage();
 buildDifficultyRow();
-requestPortraitLock();
 measureHudHeights();
 measureStage();
 showMainMenu();
