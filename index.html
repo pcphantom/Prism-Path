@@ -52,6 +52,7 @@
   }
 
   #app {
+    isolation: isolate;
     position: fixed;
     inset: 0;
     display: flex;
@@ -571,7 +572,47 @@
 
   /* ----------------------------------------------- settings submenu */
 
-  #menuMain.hidden, #settingsPage.hidden { display: none; }
+  #menuMain.hidden, #settingsPage.hidden, #backgroundPage.hidden { display: none; }
+
+  /* Gameplay artwork sits below the existing chrome. The stage keeps
+     its stacking order so pause settings can still cover the title. */
+  #gameBackdrop {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+
+  #gameBackdrop.hidden, #backgroundError.hidden { display: none; }
+
+  #backgroundError {
+    flex: 0 0 auto;
+    margin: 0;
+    padding: 8px;
+    color: var(--danger);
+    background: var(--panel);
+    font-size: 12px;
+  }
+
+  .backgroundModes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  #backgroundPreview {
+    display: block;
+    width: 100%;
+    height: 120px;
+    object-fit: contain;
+    margin-bottom: 8px;
+  }
+
+  #backgroundPreview.hidden { display: none; }
+  #backgroundChoices .menuItem { min-height: 44px; }
 
   /* One channel per box, so the toggle and the slider that belong
      together read as a pair. */
@@ -1556,6 +1597,8 @@
 <body>
 
 <div id="app">
+  <div id="gameBackdrop" class="hidden" aria-hidden="true"></div>
+  <p id="backgroundError" class="hidden" role="alert"></p>
 
   <div id="hud">
     <div id="topRow">
@@ -1606,6 +1649,7 @@
 
         <div id="settingsPage" class="hidden">
           <p id="musicNote" class="hidden"></p>
+          <button class="menuItem" id="backgroundSettings">Backgrounds</button>
 
           <div class="settingGroup" id="graphicsGroup">
             <button class="menuItem" id="graphicsToggle">Graphics: HD</button>
@@ -1642,6 +1686,17 @@
           </div>
 
           <button class="menuItem" id="settingsBack">Back</button>
+        </div>
+
+        <div id="backgroundPage" class="hidden">
+          <p class="settingNote">Choose a background for each game mode.</p>
+          <div class="backgroundModes" id="backgroundModes" role="group" aria-label="Game mode"></div>
+          <div class="settingGroup">
+            <img id="backgroundPreview" class="hidden" alt="">
+            <p class="settingNote" id="backgroundDescription" role="status"></p>
+          </div>
+          <div id="backgroundChoices" role="group" aria-label="Background"></div>
+          <button class="menuItem" id="backgroundBack">Back</button>
         </div>
       </div>
     </div>
@@ -3937,6 +3992,7 @@ const GAME_MODES = [
   {
     id: "classic",
     name: "Classic",
+    defaultBackground: "cave",
     blurb: "Clear each level's goal before the moves run out. Stones and " +
            "blight get in the way, and continues get you out of trouble.",
     rulesHtml: classicRulesHtml,
@@ -3983,6 +4039,7 @@ const GAME_MODES = [
   {
     id: "timeattack",
     name: "Time Attack",
+    defaultBackground: "vibrant",
     blurb: "The same goals as Classic, against a countdown. The clock runs " +
            "while you think, and charge buys more of it.",
     rulesHtml: timeAttackRulesHtml,
@@ -4027,6 +4084,7 @@ const GAME_MODES = [
   {
     id: "endless",
     name: "Endless",
+    defaultBackground: "ambient",
     blurb: "One board, carried the whole way. Nothing runs out, the level " +
            "just climbs, and only the blight can stop you.",
     rulesHtml: endlessRulesHtml,
@@ -4072,6 +4130,7 @@ const GAME_MODES = [
   {
     id: "elimination",
     name: "Elimination",
+    defaultBackground: "depth",
     blurb: "Nothing falls in to replace what you clear. The board drains, " +
            "and the level lasts until nothing links.",
     rulesHtml: eliminationRulesHtml,
@@ -4247,6 +4306,276 @@ function checkModeEntries() {
 
 checkModeEntries();
 
+/* =====================================================================
+   BackgroundHandler
+   Owns: background catalog, per-mode choices, image loading, and the
+   background picker. Storage and run transitions call its public API.
+   Stays out of: game rules, gem drawing, and Standard/HD menu styling.
+   ===================================================================== */
+const BACKGROUND_CATALOG = [
+  { id: "cave", name: "Cave", path: "images/ingame_bg_cave.jpg", position: "center" },
+  { id: "ambient", name: "Ambient", path: "images/ingame_bg_ambient.jpg", position: "center" },
+  { id: "vibrant", name: "Vibrant", path: "images/ingame_bg_vibrant.jpg", position: "center" },
+  { id: "depth", name: "Depth", path: "images/ingame_bg_depth.jpg", position: "center" },
+  { id: "emerald", name: "Emerald", path: "images/ingame_bg_emerald.png", position: "center" },
+  { id: "ruby", name: "Ruby", path: "images/ingame_bg_ruby.png", position: "center" },
+  { id: "loop", name: "Loop", path: "images/ingame_bg_loop.png", position: "center" }
+];
+
+const BackgroundHandler = (function () {
+  const preferences = {};
+  const catalog = new Map();
+  const imageCache = new Map();
+  const modeButtons = new Map();
+  const choiceButtons = new Map();
+  const backdrop = document.getElementById("gameBackdrop");
+  const errorNote = document.getElementById("backgroundError");
+  const page = document.getElementById("backgroundPage");
+  const preview = document.getElementById("backgroundPreview");
+  const description = document.getElementById("backgroundDescription");
+  let selectedMode = "classic";
+  let randomId = null;
+  let visible = false;
+  let imageReady = false;
+  let imageError = "";
+  let imageRequest = 0;
+  let previewRequest = 0;
+
+  for (const entry of BACKGROUND_CATALOG) {
+    if (catalog.has(entry.id)) throw new Error("Duplicate background: " + entry.id);
+    catalog.set(entry.id, entry);
+  }
+  for (const mode of GAME_MODES) {
+    entryFor(mode.defaultBackground);
+    preferences[mode.id] = "default";
+  }
+
+  function entryFor(id) {
+    if (!catalog.has(id)) throw new Error("PRISM PURGE: unknown background " + JSON.stringify(id));
+    return catalog.get(id);
+  }
+
+  function validateChoice(choice) {
+    if (choice === "default" || choice === "none" || choice === "random") return choice;
+    entryFor(choice);
+    return choice;
+  }
+
+  function resolveImage(modeId) {
+    const choice = preferences[modeId];
+    if (choice === "none") return null;
+    if (choice === "default") return modeById(modeId).defaultBackground;
+    if (choice === "random") return randomId;
+    return choice;
+  }
+
+  function chooseRandom(previous) {
+    const candidates = BACKGROUND_CATALOG.filter(function (entry) { return entry.id !== previous; });
+    if (candidates.length === 0) throw new Error("Random backgrounds require at least two images.");
+    const index = Math.floor(Math.random() * candidates.length);
+    return candidates[index].id;
+  }
+
+  /* Only two decoded images are retained by this module. In-flight
+     requests may finish later, but their request number prevents them
+     from replacing the player's more recent choice. */
+  function loadImage(id) {
+    const entry = entryFor(id);
+    if (imageCache.has(id)) {
+      const cached = imageCache.get(id);
+      imageCache.delete(id);
+      imageCache.set(id, cached);
+      return cached;
+    }
+    const image = new Image();
+    image.src = entry.path;
+    const pending = image.decode().then(function () { return image; });
+    imageCache.set(id, pending);
+    if (imageCache.size > 2) imageCache.delete(imageCache.keys().next().value);
+    return pending;
+  }
+
+  function syncVisibility() {
+    backdrop.classList.toggle("hidden", visible === false || imageReady === false);
+    errorNote.textContent = imageError;
+    errorNote.classList.toggle("hidden", visible === false || imageError === "");
+  }
+
+  function fitImage() {
+    const bounds = app.getBoundingClientRect();
+    const ratio = bounds.width / bounds.height;
+    const fit = ratio <= 0.4 || ratio >= 0.8 ? "contain" : "cover";
+    backdrop.style.backgroundSize = "100% 100%, " + fit;
+  }
+
+  async function applyImage() {
+    const request = ++imageRequest;
+    const id = resolveImage(game.modeId);
+    imageError = "";
+    if (id === null) {
+      imageReady = false;
+      backdrop.style.backgroundImage = "none";
+      syncVisibility();
+      return;
+    }
+    const entry = entryFor(id);
+    syncVisibility();
+    try {
+      const image = await loadImage(id);
+      if (request !== imageRequest) return;
+      backdrop.style.backgroundImage = 'linear-gradient(rgba(8, 6, 17, 0.30), rgba(8, 6, 17, 0.30)), url("' + image.src + '")';
+      backdrop.style.backgroundPosition = "center, " + entry.position;
+      imageReady = true;
+      fitImage();
+    } catch (failure) {
+      if (request !== imageRequest) return;
+      imageCache.delete(id);
+      imageReady = false;
+      imageError = entry.name + " background could not load. The plain board is shown. Your choice is still saved.";
+      console.error("PRISM PURGE: background failed at " + entry.path, failure);
+    }
+    syncVisibility();
+  }
+
+  function choiceLabel(choice) {
+    if (choice === "default") return "Mode Default (" + entryFor(modeById(selectedMode).defaultBackground).name + ")";
+    if (choice === "none") return "No Background";
+    if (choice === "random") return "Random Each Level";
+    return entryFor(choice).name;
+  }
+
+  async function refreshPreview() {
+    const request = ++previewRequest;
+    const choice = preferences[selectedMode];
+    preview.classList.add("hidden");
+    preview.removeAttribute("src");
+    if (choice === "none" || choice === "random") {
+      description.textContent = choice === "none"
+        ? "Uses the plain board in your chosen graphics style."
+        : "A different image each level. Retries keep the same background.";
+      return;
+    }
+    const id = choice === "default" ? modeById(selectedMode).defaultBackground : choice;
+    const entry = entryFor(id);
+    description.textContent = "Loading " + entry.name + " preview.";
+    try {
+      const image = await loadImage(id);
+      if (request !== previewRequest) return;
+      preview.src = image.src;
+      preview.alt = entry.name + " background preview";
+      preview.classList.remove("hidden");
+      description.textContent = modeById(selectedMode).name + ": " + choiceLabel(choice);
+    } catch (failure) {
+      if (request !== previewRequest) return;
+      imageCache.delete(id);
+      description.textContent = entry.name + " preview could not load. Your choice is still saved.";
+      console.error("PRISM PURGE: background preview failed at " + entry.path, failure);
+    }
+  }
+
+  function refreshPicker() {
+    for (const [id, button] of modeButtons) {
+      button.classList.toggle("picked", id === selectedMode);
+      button.setAttribute("aria-pressed", String(id === selectedMode));
+    }
+    for (const [choice, button] of choiceButtons) {
+      button.textContent = choiceLabel(choice);
+      button.classList.toggle("picked", choice === preferences[selectedMode]);
+      button.setAttribute("aria-pressed", String(choice === preferences[selectedMode]));
+    }
+    refreshPreview();
+  }
+
+  function selectChoice(choice) {
+    if (preferences[selectedMode] === choice) return;
+    preferences[selectedMode] = validateChoice(choice);
+    saveSettings();
+    if (screens.current === "playing" && selectedMode === game.modeId) {
+      randomId = choice === "random" ? chooseRandom(randomId) : null;
+      applyImage();
+      saveGame();
+    }
+    refreshPicker();
+  }
+
+  function addChoice(choice) {
+    const button = document.createElement("button");
+    button.className = "menuItem pickBtn";
+    button.addEventListener("click", function () { selectChoice(choice); });
+    document.getElementById("backgroundChoices").appendChild(button);
+    choiceButtons.set(choice, button);
+  }
+
+  function close() {
+    previewRequest++;
+    page.classList.add("hidden");
+  }
+
+  return {
+    init: function () {
+      for (const mode of GAME_MODES) {
+        const button = document.createElement("button");
+        button.className = "pickBtn";
+        button.textContent = mode.name;
+        button.addEventListener("click", function () {
+          selectedMode = mode.id;
+          refreshPicker();
+        });
+        document.getElementById("backgroundModes").appendChild(button);
+        modeButtons.set(mode.id, button);
+      }
+      addChoice("default");
+      addChoice("none");
+      addChoice("random");
+      for (const entry of BACKGROUND_CATALOG) addChoice(entry.id);
+      document.getElementById("backgroundSettings").addEventListener("click", function () {
+        selectedMode = game.modeId;
+        settingsPage.classList.add("hidden");
+        page.classList.remove("hidden");
+        menuTitle.textContent = "Backgrounds";
+        refreshPicker();
+        modeButtons.get(selectedMode).focus();
+      });
+      document.getElementById("backgroundBack").addEventListener("click", function () {
+        showSettingsPage(settingsReturnsTo);
+        document.getElementById("backgroundSettings").focus();
+      });
+      new ResizeObserver(fitImage).observe(app);
+    },
+    preferences: function () { return { ...preferences }; },
+    restorePreferences: function (stored) {
+      if (stored === null || typeof stored !== "object" || Array.isArray(stored)) {
+        throw new Error("PRISM PURGE: background preferences must be an object.");
+      }
+      for (const mode of GAME_MODES) preferences[mode.id] = validateChoice(stored[mode.id]);
+    },
+    beginRun: function () {
+      randomId = preferences[game.modeId] === "random" ? chooseRandom(null) : null;
+      imageReady = false;
+      applyImage();
+    },
+    nextLevel: function () {
+      if (preferences[game.modeId] !== "random") return;
+      randomId = chooseRandom(randomId);
+      applyImage();
+    },
+    restoreRun: function (savedId) {
+      if (savedId !== null) entryFor(savedId);
+      randomId = savedId;
+      // Old runs have no random image; pick once on their first restore.
+      if (preferences[game.modeId] === "random" && randomId === null) randomId = chooseRandom(null);
+      if (preferences[game.modeId] !== "random") randomId = null;
+      imageReady = false;
+      applyImage();
+    },
+    randomId: function () { return randomId; },
+    setVisible: function (shown) { visible = shown; syncVisibility(); },
+    isVisible: function () { return visible && imageReady; },
+    isOpen: function () { return page.classList.contains("hidden") === false; },
+    close: close
+  };
+})();
+
 /* ------------------------------------------------------------------
    Starting and advancing a run
    ------------------------------------------------------------------ */
@@ -4265,12 +4594,14 @@ function startRun(modeId, difficulty) {
   game.aiming = "none";
   game.continues = activeTuning().continuesAtStart;
   game.blightCarry = 0;
+  BackgroundHandler.beginRun();
   startLevel(true);
 }
 
 /* One level up, on whatever board the mode says this level should get. */
 function advanceToNextLevel() {
   game.level++;
+  BackgroundHandler.nextLevel();
   startLevel(activeMode().rebuildsBoardEachLevel);
 }
 
@@ -7146,7 +7477,8 @@ function saveGame() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 4,
+    version: 5,
+    randomBackgroundId: BackgroundHandler.randomId(),
     rows: ROWS,
     cols: COLS,
     mode: game.modeId,
@@ -7178,7 +7510,7 @@ function readSaveFor(modeId) {
      the same way a save from a differently shaped board is. Said out
      loud, because a run vanishing off the mode select screen with no
      explanation is the worst way to meet it. */
-  if (payload.version !== 4) {
+  if (payload.version !== 4 && payload.version !== 5) {
     console.error("PRISM PURGE found a saved " + modeId + " game at version " +
       payload.version + ", which this build cannot read. It has been left alone " +
       "and the mode will offer a new game.");
@@ -7188,6 +7520,12 @@ function readSaveFor(modeId) {
   /* A save made on a differently shaped board cannot be restored onto
      this one, so it is treated as absent. */
   if (payload.rows !== ROWS || payload.cols !== COLS) return null;
+
+  // Version 4 predates backgrounds. Its board remains a valid saved run.
+  if (payload.version === 4) {
+    payload.version = 5;
+    payload.randomBackgroundId = null;
+  }
 
   return payload;
 }
@@ -7215,11 +7553,14 @@ function loadGame(payload) {
   blightCrawls.length = 0;
 
   restoreBoard(payload.board);
+  BackgroundHandler.restoreRun(payload.randomBackgroundId);
   clearHint();
 
   game.phase = "idle";
   setMusicForLevel(game.level);
   refreshHud();
+  // Persist a random image chosen while migrating an older saved run.
+  saveGame();
 }
 
 function clearSaveFor(modeId) {
@@ -7262,7 +7603,8 @@ function saveSettings() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 5,
+    version: 6,
+    backgrounds: BackgroundHandler.preferences(),
     sfxEnabled: sound.enabled,
     sfxVolume: sound.volume,
     musicEnabled: music.enabled,
@@ -7278,7 +7620,7 @@ function saveSettings() {
   window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(payload));
 }
 
-/* Reads what was stored onto the audio objects and the hint helper. A
+/* Reads stored audio, appearance, background and hint preferences. A
    first run has nothing stored, which is not a failure: the values
    written into those objects stand, and get saved the first time one is
    changed.
@@ -7301,6 +7643,9 @@ function saveSettings() {
    a player arriving from it has plainly already set the game up and the
    tour counts as done.
 
+   Version 5 predates per-mode backgrounds. Earlier supported payloads
+   keep the catalog's explicit Mode Default preferences for every mode.
+
    A payload under a version this build does not know is treated as
    absent, the same way an old save is. A payload under a version it
    does know is expected to hold the right shape, and is not quietly
@@ -7313,7 +7658,7 @@ function loadSettings() {
 
   const payload = JSON.parse(raw);
   if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 &&
-      payload.version !== 4 && payload.version !== 5) return;
+      payload.version !== 4 && payload.version !== 5 && payload.version !== 6) return;
 
   settingsWereStored = true;
 
@@ -7339,6 +7684,8 @@ function loadSettings() {
   if (payload.version === 4) return;
 
   tour.done = storedSwitch(payload.tourDone, "tourDone");
+  if (payload.version === 5) return;
+  BackgroundHandler.restorePreferences(payload.backgrounds);
 }
 
 function storedGraphicsMode(value, fieldName) {
@@ -8858,21 +9205,23 @@ function boardTray() {
   };
 }
 
-function drawBackdrop(tray) {
+function drawBackdrop(tray, showImage = false) {
   if (graphics.mode === GRAPHICS_HD) {
-    drawBackdropHD(tray);
+    drawBackdropHD(tray, showImage);
     return;
   }
-  drawBackdropStandard(tray);
+  drawBackdropStandard(tray, showImage);
 }
 
-function drawBackdropStandard(tray) {
-  const hueShift = (tray.level - 1) * 26;
-  const gradient = ctx.createLinearGradient(0, 0, 0, tray.height);
-  gradient.addColorStop(0, "hsl(" + ((262 + hueShift) % 360) + ", 44%, 12%)");
-  gradient.addColorStop(1, "hsl(" + ((228 + hueShift) % 360) + ", 50%, 7%)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, tray.width, tray.height);
+function drawBackdropStandard(tray, showImage) {
+  if (showImage === false) {
+    const hueShift = (tray.level - 1) * 26;
+    const gradient = ctx.createLinearGradient(0, 0, 0, tray.height);
+    gradient.addColorStop(0, "hsl(" + ((262 + hueShift) % 360) + ", 44%, 12%)");
+    gradient.addColorStop(1, "hsl(" + ((228 + hueShift) % 360) + ", 50%, 7%)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, tray.width, tray.height);
+  }
 
   ctx.strokeStyle = "rgba(255, 255, 255, 0.045)";
   ctx.lineWidth = 1;
@@ -8893,19 +9242,21 @@ function drawBackdropStandard(tray) {
    under a key light coming from above. The same light the stones are
    cut for.
 
-   The level still tints it, so levels still feel different, but at a
-   third of the saturation Standard uses.
+   With No Background, the level tints the base at a third of Standard's
+   saturation. With artwork, only the recessed cells cover the image.
 
    One gradient per row rather than one per cell. The lip is vertical
    and every cell in a row shares a y, so seven cells share an object
    and the frame builds nine of them instead of sixty three. */
-function drawBackdropHD(tray) {
-  const hueShift = (tray.level - 1) * 26;
-  const gradient = ctx.createLinearGradient(0, 0, 0, tray.height);
-  gradient.addColorStop(0, "hsl(" + ((262 + hueShift) % 360) + ", 30%, 7%)");
-  gradient.addColorStop(1, "hsl(" + ((228 + hueShift) % 360) + ", 34%, 4%)");
-  ctx.fillStyle = gradient;
-  ctx.fillRect(0, 0, tray.width, tray.height);
+function drawBackdropHD(tray, showImage) {
+  if (showImage === false) {
+    const hueShift = (tray.level - 1) * 26;
+    const gradient = ctx.createLinearGradient(0, 0, 0, tray.height);
+    gradient.addColorStop(0, "hsl(" + ((262 + hueShift) % 360) + ", 30%, 7%)");
+    gradient.addColorStop(1, "hsl(" + ((228 + hueShift) % 360) + ", 34%, 4%)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, tray.width, tray.height);
+  }
 
   const inset = 2;
   const size = tray.cell - inset * 2;
@@ -9885,6 +10236,8 @@ function drawBlightMeter() {
 }
 
 function render() {
+  // Clear before shaking so transparent artwork cannot leave gem trails.
+  ctx.clearRect(0, 0, layout.width, layout.height);
   ctx.save();
 
   if (game.shake > 0.2) {
@@ -9893,7 +10246,7 @@ function render() {
     ctx.translate(dx, dy);
   }
 
-  drawBackdrop(boardTray());
+  drawBackdrop(boardTray(), BackgroundHandler.isVisible());
   drawLoopInteriorGlow();
   drawCells();
   drawShockwaves();
@@ -10517,6 +10870,7 @@ const SCREEN_ELEMENTS = {
    and simply leaves every one of them hidden. */
 function showScreen(name) {
   screens.current = name;
+  BackgroundHandler.setVisible(name === "playing");
 
   const names = Object.keys(SCREEN_ELEMENTS);
   for (let i = 0; i < names.length; i++) {
@@ -11382,10 +11736,11 @@ function menuIsOpen() {
   return menuPanel.classList.contains("hidden") === false;
 }
 
-/* The panel is two pages in the one card. Opening it and closing it
+/* The panel's pages share one card. Opening it and closing it
    both land on the main page, so it never comes back halfway inside a
    submenu the player walked away from. */
 function showMenuMain() {
+  BackgroundHandler.close();
   menuTitle.textContent = "Paused";
   settingsPage.classList.add("hidden");
   menuMain.classList.remove("hidden");
@@ -11396,6 +11751,7 @@ function showMenuMain() {
 let settingsReturnsTo = "pauseMenu";
 
 function showSettingsPage(returnTo) {
+  BackgroundHandler.close();
   settingsReturnsTo = returnTo;
   menuTitle.textContent = "Settings";
   menuMain.classList.add("hidden");
@@ -11686,6 +12042,10 @@ window.addEventListener("popstate", function () {
    level up is depends on where the player is standing. The main menu is
    the top, so there is nowhere further to go from it. */
 function menuBack() {
+  if (menuIsOpen() === true && BackgroundHandler.isOpen()) {
+    showSettingsPage(settingsReturnsTo);
+    return;
+  }
   if (menuIsOpen() === true && settingsPageIsOpen() === true) {
     leaveSettingsPage();
     return;
@@ -11808,6 +12168,7 @@ document.addEventListener("dblclick", function (event) { event.preventDefault();
 
 migrateLegacyStorage();
 loadSettings();
+BackgroundHandler.init();
 applyGraphicsMode();
 refreshSettingsPage();
 buildDifficultyRow();
