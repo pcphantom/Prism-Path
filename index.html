@@ -2008,9 +2008,10 @@ const CLASSIC_ITEMS = [
    often you earn another is the same on all three. */
 const CONTINUE_EVERY_LEVELS = 10;
 
-/* Every mode keeps its own saved run, and every mode and difficulty
-   pairing keeps its own best score, because a Hard best and an Easy
-   best are not the same achievement and do not belong in one number. */
+/* Every mode and difficulty pairing keeps its own saved run and its own
+   best score. Trying Hard costs you nothing on the Normal game you were
+   halfway through, and a Hard best and an Easy best are not the same
+   achievement so they do not belong in one number. */
 const SAVE_KEY_PREFIX = "prismPathSave:";
 const BEST_KEY_PREFIX = "prismPathBest:";
 const SETTINGS_KEY = "prismPathAudio";
@@ -7308,7 +7309,7 @@ function endRun(title, subtitle) {
     saveBest(game.bestScore, game.modeId, game.difficulty);
   }
 
-  clearSaveFor(game.modeId);
+  clearSaveFor(game.modeId, game.difficulty);
 
   finalScoreEl.textContent = String(game.score);
   bestScoreEl.textContent = String(game.bestScore);
@@ -7422,8 +7423,8 @@ const storageWorks = (function () {
   }
 })();
 
-function saveKeyFor(modeId) {
-  return SAVE_KEY_PREFIX + modeId;
+function saveKeyFor(modeId, difficulty) {
+  return SAVE_KEY_PREFIX + modeId + ":" + difficulty;
 }
 
 function bestKeyFor(modeId, difficulty) {
@@ -7456,7 +7457,7 @@ function migrateLegacyStorage() {
       payload.budget = payload.moves;
       delete payload.moves;
 
-      window.localStorage.setItem(saveKeyFor("classic"), JSON.stringify(payload));
+      window.localStorage.setItem(saveKeyFor("classic", "normal"), JSON.stringify(payload));
     } else {
       console.error("PRISM PURGE found a saved game under the old key at version " +
         payload.version + ", which no build has ever read. It has been discarded.");
@@ -7469,6 +7470,56 @@ function migrateLegacyStorage() {
   if (rawBest !== null) {
     window.localStorage.setItem(bestKeyFor("classic", "normal"), rawBest);
     window.localStorage.removeItem(LEGACY_BEST_KEY);
+  }
+}
+
+/* =====================================================================
+   TEMPORARY ADAPTER: per mode saves into per mode and difficulty slots.
+
+   DELETE THIS WHOLE BLOCK once the testers have all opened the game at
+   least once on this build. To remove it: delete migratePerModeSaves,
+   delete its one call in the boot sequence, and delete nothing else.
+   Nothing in the game reads it or depends on it.
+
+   What it does: saves used to be keyed by mode alone, one run per mode.
+   They are now keyed by mode and difficulty together. This walks the old
+   keys once at boot and moves each run into the slot for the difficulty
+   it was begun on, which every save from version 4 onwards records
+   inside itself. Without it a tester's run in progress would sit under a
+   key nothing reads any more and look lost.
+   ===================================================================== */
+function migratePerModeSaves() {
+  if (storageWorks === false) return;
+
+  for (let modeIndex = 0; modeIndex < GAME_MODES.length; modeIndex++) {
+    const modeId = GAME_MODES[modeIndex].id;
+    const perModeKey = SAVE_KEY_PREFIX + modeId;
+    const raw = window.localStorage.getItem(perModeKey);
+
+    if (raw === null) continue;
+
+    const payload = JSON.parse(raw);
+
+    let difficultyIsKnown = false;
+    for (let difficultyIndex = 0; difficultyIndex < DIFFICULTIES.length; difficultyIndex++) {
+      if (DIFFICULTIES[difficultyIndex].id === payload.difficulty) difficultyIsKnown = true;
+    }
+
+    /* A run has to say which difficulty it was begun on or there is no
+       right slot to put it in. Every save the game has ever written
+       under a per mode key carries that field, so a payload without one
+       came from something other than this game. It is left where it is
+       and said out loud, the same way readSaveFor leaves a save it
+       cannot read, because moving it somewhere arbitrary would be worse
+       than leaving it alone. */
+    if (difficultyIsKnown === false) {
+      console.error("PRISM PURGE found a saved " + modeId + " game with no difficulty on it. " +
+        "It cannot be moved into a difficulty slot and has been left alone.");
+      continue;
+    }
+
+    window.localStorage.setItem(saveKeyFor(modeId, payload.difficulty), raw);
+    window.localStorage.removeItem(perModeKey);
   }
 }
 
@@ -7495,13 +7546,13 @@ function saveGame() {
     board: serialiseBoard()
   };
 
-  window.localStorage.setItem(saveKeyFor(game.modeId), JSON.stringify(payload));
+  window.localStorage.setItem(saveKeyFor(game.modeId, game.difficulty), JSON.stringify(payload));
 }
 
-function readSaveFor(modeId) {
+function readSaveFor(modeId, difficulty) {
   if (storageWorks === false) return null;
 
-  const raw = window.localStorage.getItem(saveKeyFor(modeId));
+  const raw = window.localStorage.getItem(saveKeyFor(modeId, difficulty));
   if (raw === null) return null;
 
   const payload = JSON.parse(raw);
@@ -7511,9 +7562,9 @@ function readSaveFor(modeId) {
      loud, because a run vanishing off the mode select screen with no
      explanation is the worst way to meet it. */
   if (payload.version !== 4 && payload.version !== 5) {
-    console.error("PRISM PURGE found a saved " + modeId + " game at version " +
-      payload.version + ", which this build cannot read. It has been left alone " +
-      "and the mode will offer a new game.");
+    console.error("PRISM PURGE found a saved " + modeId + " game on " + difficulty +
+      " at version " + payload.version + ", which this build cannot read. It has been " +
+      "left alone and the mode will offer a new game.");
     return null;
   }
 
@@ -7563,18 +7614,28 @@ function loadGame(payload) {
   saveGame();
 }
 
-function clearSaveFor(modeId) {
+function clearSaveFor(modeId, difficulty) {
   if (storageWorks === false) return;
 
-  window.localStorage.removeItem(saveKeyFor(modeId));
+  window.localStorage.removeItem(saveKeyFor(modeId, difficulty));
 }
 
 /* The mode tiles ask this once each on their way onto the screen, so it
-   answers without parsing a whole board back out of storage. */
-function hasSaveFor(modeId) {
+   answers without parsing a whole board back out of storage.
+
+   A mode can be holding a run on all three difficulties at once, and the
+   tile only has room to say that a run exists, so any one of them is
+   enough to answer yes. Which ones they are is the mode start screen's
+   job to show, where the difficulty selector is standing right next to
+   the answer. */
+function hasAnySaveFor(modeId) {
   if (storageWorks === false) return false;
 
-  return window.localStorage.getItem(saveKeyFor(modeId)) !== null;
+  for (let i = 0; i < DIFFICULTIES.length; i++) {
+    const key = saveKeyFor(modeId, DIFFICULTIES[i].id);
+    if (window.localStorage.getItem(key) !== null) return true;
+  }
+  return false;
 }
 
 function saveBest(value, modeId, difficulty) {
@@ -10935,7 +10996,7 @@ function showModeSelect() {
     blurb.textContent = mode.blurb;
     words.appendChild(blurb);
 
-    if (hasSaveFor(mode.id) === true) {
+    if (hasAnySaveFor(mode.id) === true) {
       const saved = document.createElement("div");
       saved.className = "modeSaved";
       saved.textContent = "Game in progress";
@@ -10956,8 +11017,11 @@ function showModeSelect() {
   showScreen("modeSelect");
 }
 
-/* Which mode the start screen is currently showing, and its saved run if
-   it has one. Set by showModeStart and read by its two buttons, so
+/* Which mode the start screen is currently showing, and the saved run on
+   the difficulty currently picked, if there is one. The mode is set by
+   showModeStart and the run by refreshDifficultyRow, since a mode holds
+   a separate run on each difficulty and the selector decides which one
+   this screen is talking about. Both are read by the two buttons, so
    neither has to go back to storage to find out what it is acting on. */
 let modeStartMode = "classic";
 let modeStartSave = null;
@@ -10967,10 +11031,11 @@ let modeStartSave = null;
    destroys anything. */
 let modeStartConfirming = false;
 
-/* The difficulty a New Game would start on. It follows the player from
-   one mode's screen to the next for as long as the page is open, so
-   somebody who plays Hard is not put back to Normal every time. A saved
-   run ignores it and carries the difficulty it was begun on. */
+/* The difficulty the start screen is looking at. It decides which run
+   Continue offers and which one New Game starts, and it follows the
+   player from one mode's screen to the next for as long as the page is
+   open, so somebody who plays Hard is not put back to Normal every
+   time. */
 let pickedDifficulty = DEFAULT_DIFFICULTY;
 
 /* Built once. The three buttons never change, only which one is worn. */
@@ -10993,8 +11058,11 @@ function buildDifficultyRow() {
   }
 }
 
-/* The picked button, the line explaining what it means, and the best
-   score, which belongs to a mode and a difficulty together. */
+/* Everything on this screen that changes with the difficulty: the worn
+   button, the line explaining what the pick means, the saved run being
+   offered, and the best score. All four belong to a mode and a
+   difficulty together, so all four are answered here and the selector
+   is the only thing that has to be told a difficulty changed. */
 function refreshDifficultyRow() {
   const mode = modeById(modeStartMode);
   const buttons = difficultyRow.querySelectorAll(".pickBtn");
@@ -11008,6 +11076,8 @@ function refreshDifficultyRow() {
   }
 
   difficultyNote.textContent = mode.difficultySummary(pickedDifficulty);
+  modeStartSave = readSaveFor(modeStartMode, pickedDifficulty);
+  refreshModeStartButtons();
   refreshModeStartBest();
 }
 
@@ -11021,14 +11091,15 @@ function refreshModeStartBest() {
   modeStartBest.textContent = "Best on " + difficultyName(pickedDifficulty) + ": " + best;
 }
 
-/* Where a mode's own saved game lives, which is the whole reason
-   Continue and New Game moved off the front page and onto here. */
+/* Where a mode's saved games live, which is the whole reason Continue
+   and New Game moved off the front page and onto here. The mode is set
+   first because refreshDifficultyRow reads it to find the saved run and
+   the best score, and it is the only thing here that fills in the foot
+   of the screen. */
 function showModeStart(modeId) {
   const mode = modeById(modeId);
-  const saved = readSaveFor(modeId);
 
   modeStartMode = modeId;
-  modeStartSave = saved;
 
   modeStartTitle.textContent = mode.name;
   modeStartSub.textContent = mode.blurb;
@@ -11041,23 +11112,25 @@ function showModeStart(modeId) {
   modeStartRules.scrollTop = 0;
 
   modeStartConfirming = false;
-  refreshModeStartButtons();
   refreshDifficultyRow();
   showScreen("modeStart");
 }
 
 /* Two shapes for the foot of this screen. Ordinarily it offers the run
-   you have and a new one. Once New Game has been pressed on a mode that
-   is holding a run, it offers nothing but the decision, so the button
-   that discards a level thirty game cannot be reached by a thumb aiming
-   at something else. */
+   you have on the picked difficulty and a new one. Once New Game has
+   been pressed on a difficulty that is holding a run, it offers nothing
+   but the decision, so the button that discards a level thirty game
+   cannot be reached by a thumb aiming at something else. The difficulty
+   row goes with it, which is what stops the pick moving underneath a
+   warning already naming the run it is about to destroy. */
 function refreshModeStartButtons() {
   const saved = modeStartSave;
 
   if (modeStartConfirming === true) {
     modeStartWarning.textContent = "Starting a new game will discard your saved " +
-      modeById(modeStartMode).name + " run on level " + saved.level + ", worth " +
-      saved.score + " points. This cannot be undone.";
+      modeById(modeStartMode).name + " run on " + difficultyName(saved.difficulty) +
+      ", level " + saved.level + ", worth " + saved.score + " points. Your runs on the " +
+      "other difficulties are not touched. This cannot be undone.";
     modeStartWarning.classList.remove("hidden");
 
     modeContinue.classList.add("hidden");
@@ -11078,8 +11151,8 @@ function refreshModeStartButtons() {
   modeNewGameCancel.classList.add("hidden");
   modeNewGame.textContent = "New Game";
 
-  /* A mode with nothing saved leads with New Game, because it is the
-     only thing on offer. */
+  /* A difficulty with nothing saved leads with New Game, because it is
+     the only thing on offer. */
   if (saved === null) {
     modeContinue.classList.add("hidden");
     modeNewGame.className = "screenBtn primary";
@@ -11707,8 +11780,9 @@ modeContinue.addEventListener("click", function () {
   enterSavedRun(modeStartSave);
 });
 
-/* A saved run carries the difficulty it was begun on, so Continue says
-   which one you are going back to and the selector has no say in it. */
+/* Both buttons act on the picked difficulty, which is the one whose run
+   Continue is offering and the one New Game would replace. The other two
+   difficulties keep whatever they were holding. */
 modeNewGame.addEventListener("click", function () {
   ensureAudio();
 
@@ -11718,7 +11792,7 @@ modeNewGame.addEventListener("click", function () {
     return;
   }
 
-  clearSaveFor(modeStartMode);
+  clearSaveFor(modeStartMode, pickedDifficulty);
   enterRun(modeStartMode, pickedDifficulty);
 });
 
@@ -12019,7 +12093,7 @@ menuSaveQuit.addEventListener("click", function () {
 });
 
 menuQuit.addEventListener("click", function () {
-  clearSaveFor(game.modeId);
+  clearSaveFor(game.modeId, game.difficulty);
   quitToMainMenu();
 });
 
@@ -12072,11 +12146,70 @@ function menuBack() {
   openMenu();
 }
 
+/* =====================================================================
+   OrientationHandler
+   Owns: asking the browser to keep the game in portrait, and measuring
+   the stage again once the phone has finished turning.
+   Stays out of: layout, drawing and input. Nothing here rotates
+   anything itself, which is why none of those have to know it exists.
+
+   The board is seven columns by nine rows, so portrait is the only
+   shape it fits. The request names the portrait group instead of one
+   specific way up, and that is the whole trick: the group covers both
+   ways up, so a phone held upside down turns the game with it and stays
+   readable, while the two landscape orientations stay refused.
+
+   A browser that will not take the request is left alone on purpose.
+   The game goes on reflowing to whatever orientation it is given,
+   exactly as it did before this module existed.
+   ===================================================================== */
+
+const GAME_ORIENTATION = "portrait";
+
+const screenOrientationSupported = typeof window.screen.orientation === "object";
+const orientationLockSupported = screenOrientationSupported === true &&
+  typeof window.screen.orientation.lock === "function";
+
+function requestPortraitLock() {
+  if (orientationLockSupported === false) return;
+
+  /* Two browsers turn this down, and both turn it down by rejecting:
+     Chrome on Android unless the document is fullscreen, and desktop
+     browsers always. A refusal is the browser's answer about what it
+     will allow, and there is nothing the game or the player can do
+     about it, so it is taken and no more is made of it. Catching it is
+     what keeps an expected answer from being reported as a fault. */
+  window.screen.orientation.lock(GAME_ORIENTATION).catch(function () {});
+}
+
+/* A phone reports its old viewport size for a moment after it turns, so
+   the second measurement waits for the new one to land. The stage's own
+   resize observer sees the turn as well and can see it halfway through,
+   which is why this one exists at all.
+
+   screen.orientation carries the current event. window.orientationchange
+   is the predecessor it replaced, still fired everywhere and still the
+   only one iOS Safari before 16.4 has, so that is where it is used. */
+function measureStageAfterTurn() {
+  window.setTimeout(measureStage, 200);
+}
+
+if (screenOrientationSupported === true) {
+  window.screen.orientation.addEventListener("change", measureStageAfterTurn);
+} else {
+  window.addEventListener("orientationchange", measureStageAfterTurn);
+}
+
 const fullscreenSupported = typeof document.documentElement.requestFullscreen === "function";
 
 document.addEventListener("fullscreenchange", function () {
   window.setTimeout(measureStage, 120);
   refreshFullscreenLabels();
+
+  /* Chrome on Android only accepts the orientation request while the
+     document is fullscreen, so entering fullscreen is the one moment
+     worth asking again. */
+  if (document.fullscreenElement !== null) requestPortraitLock();
 });
 
 /* ------------------------------------------------------------------
@@ -12158,20 +12291,18 @@ function measureStage() {
 const stageObserver = new ResizeObserver(measureStage);
 stageObserver.observe(stage);
 
-window.addEventListener("orientationchange", function () {
-  window.setTimeout(measureStage, 200);
-});
-
 /* Blocks the pinch-zoom and double tap zoom that ruin drag controls. */
 document.addEventListener("gesturestart", function (event) { event.preventDefault(); });
 document.addEventListener("dblclick", function (event) { event.preventDefault(); });
 
 migrateLegacyStorage();
+migratePerModeSaves();
 loadSettings();
 BackgroundHandler.init();
 applyGraphicsMode();
 refreshSettingsPage();
 buildDifficultyRow();
+requestPortraitLock();
 measureHudHeights();
 measureStage();
 showMainMenu();
