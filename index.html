@@ -1781,7 +1781,6 @@
       <div class="screenBody">
         <p class="screenNote" id="tourCopy"></p>
         <div class="tourPanels" id="tourPanels"></div>
-        <button class="screenBtn hidden" id="tourSample"></button>
         <p class="screenNote" id="tourNote"></p>
       </div>
       <div class="screenFoot">
@@ -2281,7 +2280,6 @@ const tourTitle = document.getElementById("tourTitle");
 const tourProgress = document.getElementById("tourProgress");
 const tourCopy = document.getElementById("tourCopy");
 const tourPanels = document.getElementById("tourPanels");
-const tourSample = document.getElementById("tourSample");
 const tourNote = document.getElementById("tourNote");
 const tourChoices = document.getElementById("tourChoices");
 const tourNext = document.getElementById("tourNext");
@@ -2851,21 +2849,36 @@ function playPrismNova() {
    limiter anyway, or a big gem break would duck the soundtrack every
    time it went off.
 
-   To add music for a level later:
+   To add music later:
      1. Put the file in audio/ and add an entry to MUSIC_TRACKS.
-     2. Return its id from musicTrackForLevel for the levels it covers.
-   Nothing else needs touching. Every level start already asks for the
-   right track, and swapping one track for another runs through the
-   same one-at-a-time machinery used here.
+     2. Return its id from musicTrackForLevel for the levels it covers,
+        or from musicTrackForScreen for the screens it covers.
+   Nothing else needs touching. Every level start and every screen
+   change already asks for the right track, and swapping one track for
+   another runs through the same one-at-a-time machinery used here.
+
+   Two tracks can never sound at once. syncMusic is the only thing in
+   the game that starts or stops a track, and it pauses the outgoing
+   element before it asks the incoming one to play. Everything else,
+   here and elsewhere, only ever says what it wants and leaves the
+   reconciling to it.
    ------------------------------------------------------------------ */
 
 const MUSIC_TRACKS = {
-  ambient: {
-    url: "audio/prism-path-ambient.ogg",
+  title: {
+    url: "audio/prism-path-title.ogg",
 
     /* Per track attenuation between 0 and 1, so a loud track added
        later can be pulled back to sit level with a quiet one without
        the player having to move their slider. */
+    trim: 1
+  },
+  menu: {
+    url: "audio/prism-path-menu.ogg",
+    trim: 1
+  },
+  ambient: {
+    url: "audio/prism-path-ambient.ogg",
     trim: 1
   }
 };
@@ -2877,6 +2890,22 @@ function musicTrackForLevel(level) {
   return "ambient";
 }
 
+/* Which track a screen wants. The title card has its own. A run plays
+   whatever its level asks for. Every other screen is a menu with no
+   game behind it, and they share one track so walking between them
+   does not chop the music in and out.
+
+   Help and Settings can also open over a paused run. Those keep the
+   run's music; opened from the title, they use menu music. */
+function musicTrackForScreen(name) {
+  if (name === "mainMenu") return "title";
+  if (name === "playing") return musicTrackForLevel(game.level);
+  if (name === "help" && helpReturnsTo === "pauseMenu") return musicTrackForLevel(game.level);
+  if (name === "settings" && settingsReturnsTo === "pauseMenu") return musicTrackForLevel(game.level);
+
+  return "menu";
+}
+
 const music = {
   enabled: true,
   volume: 0.6,
@@ -2886,10 +2915,11 @@ const music = {
      things keeping the music from doubling up. */
   elements: {},
 
-  /* What the game wants playing, and what is actually playing. Callers
-     set the first and let syncMusic reconcile. Nothing anywhere else
-     starts or stops a track directly. */
+  /* A pending play request is separate from confirmed playback. Both
+     are checked against the element when reconciling, since the
+     browser can pause audio without a screen change. */
   wantedTrackId: null,
+  pendingTrackId: null,
   playingTrackId: null,
 
   /* Counts the starts. Pausing an element rejects the play promise it
@@ -2933,22 +2963,15 @@ function musicElement(trackId) {
   return element;
 }
 
-/* The only place a track is allowed to start or stop. It compares what
-   the game wants against what is sounding and moves one to the other,
-   so calling it twice, ten times, or in the middle of its own work
-   changes nothing after the first call. Every restart, refresh, resume,
-   continue, retry and trip back to the menu comes through here, which
-   is why none of them can leave two copies playing. */
+/* Stop the outgoing track before starting its replacement. Repeated
+   requests preserve playback in progress, but a browser pause leaves
+   the selected track eligible to resume at its current position. */
 function syncMusic() {
   const wanted = music.enabled === true ? music.wantedTrackId : null;
+  const active = music.pendingTrackId !== null ? music.pendingTrackId : music.playingTrackId;
 
-  if (wanted === music.playingTrackId) {
-    applyMusicVolume();
-    return;
-  }
-
-  if (music.playingTrackId !== null) {
-    const leaving = musicElement(music.playingTrackId);
+  if (active !== null && active !== wanted) {
+    const leaving = musicElement(active);
 
     /* Pausing rejects whatever play promise this element still had
        running, so that promise stops speaking for the state here. */
@@ -2958,6 +2981,7 @@ function syncMusic() {
     /* Stopped means stopped. The next start is from the top, so the
        state a track is left in never depends on how it was left. */
     leaving.currentTime = 0;
+    music.pendingTrackId = null;
     music.playingTrackId = null;
   }
 
@@ -2965,42 +2989,52 @@ function syncMusic() {
 
   const element = musicElement(wanted);
 
-  /* Claimed up front, before play is even asked for. play settles a
-     tick later, and a second syncMusic landing in that gap has to find
-     the track already taken. */
-  music.playingTrackId = wanted;
+  if (active === wanted && element.paused === false) {
+    applyMusicVolume();
+    return;
+  }
+
+  music.playingTrackId = null;
+  music.pendingTrackId = wanted;
   const attempt = ++music.attempt;
   applyMusicVolume();
 
   const started = element.play();
 
-  /* Browsers old enough to predate the promise returning play give back
-     nothing here, so there is no rejection to wait on and the start has
-     already either happened or not. */
-  if (started === undefined) return;
-
-  started.catch(function (refused) {
-    /* Every path that starts music sits behind a button press, so the
-       autoplay rules should never bite. If they ever do, the claim
-       above is untrue and has to be handed back, or the track could
-       never start again.
-
-       Only the newest start may hand it back. An older one rejecting
-       just means it was paused on the way, and the track sounding now
-       is not the one it was trying to begin. */
+  function confirmPlayback() {
     if (music.attempt !== attempt) return;
-    if (music.playingTrackId !== wanted) return;
+    music.pendingTrackId = null;
+    if (element.paused === false) music.playingTrackId = wanted;
+  }
 
+  /* Older browsers return no promise; their element state still tells
+     us whether the request left the track paused. */
+  if (started === undefined) {
+    confirmPlayback();
+    return;
+  }
+
+  started.then(confirmPlayback, function (refused) {
+    /* A stopped or superseded request cannot change the current track. */
+    if (music.attempt !== attempt) return;
+
+    music.pendingTrackId = null;
     music.playingTrackId = null;
+
+    /* Autoplay refusal waits for another user interaction. Other
+       failures remain visible in the console. */
+    if (refused.name === "NotAllowedError") return;
+
     console.error("PRISM PURGE could not start the music.", refused);
   });
 }
 
 function applyMusicVolume() {
-  if (music.playingTrackId === null) return;
+  const active = music.pendingTrackId !== null ? music.pendingTrackId : music.playingTrackId;
+  if (active === null) return;
 
-  const track = MUSIC_TRACKS[music.playingTrackId];
-  const element = musicElement(music.playingTrackId);
+  const track = MUSIC_TRACKS[active];
+  const element = musicElement(active);
   element.volume = music.volume * track.trim;
 }
 
@@ -3011,8 +3045,28 @@ function setMusicForLevel(level) {
   syncMusic();
 }
 
-/* The run has ended or the player has gone back to the title. Music
-   never plays over a game that has not been started. */
+/* Screens and the Settings overlay select music through the same path. */
+function setMusicForScreen(name) {
+  music.wantedTrackId = musicTrackForScreen(name);
+  syncMusic();
+}
+
+/* Keep interaction retries available after autoplay refusal and later
+   browser interruptions. Bubbling lets the button select its destination
+   track first; an element already running needs no new play request. */
+function retryMusicAfterInput() {
+  syncMusic();
+}
+
+window.addEventListener("click", retryMusicAfterInput);
+window.addEventListener("keydown", retryMusicAfterInput);
+window.addEventListener("pageshow", syncMusic);
+document.addEventListener("visibilitychange", function () {
+  if (document.visibilityState === "visible") syncMusic();
+});
+
+/* End the current music request when a run ends. The next screen or
+   level supplies its own request. */
 function stopMusic() {
   music.wantedTrackId = null;
   syncMusic();
@@ -3984,7 +4038,7 @@ const ELIMINATION_TILE_GEMS = [
 ];
 
 function drawEliminationTileMark(tray) {
-  drawTileChip(tray, "17");
+  drawTileChip(tray, "0");
 }
 
 /* ---- the registry ---- */
@@ -10931,6 +10985,7 @@ const SCREEN_ELEMENTS = {
    and simply leaves every one of them hidden. */
 function showScreen(name) {
   screens.current = name;
+  setMusicForScreen(name);
   BackgroundHandler.setVisible(name === "playing");
 
   const names = Object.keys(SCREEN_ELEMENTS);
@@ -11231,7 +11286,6 @@ const TOUR_STEPS = [
           "it runs on anything. HD cuts every gem as a faceted stone with light " +
           "moving across it, which is sharper to look at and asks more of the device.",
     panels: { labels: ["Standard", "HD"] },
-    sample: null,
     options: [
       { label: "Standard", choose: chooseStandardGraphics, isPicked: standardIsPicked },
       { label: "HD", choose: chooseHdGraphics, isPicked: hdIsPicked }
@@ -11247,7 +11301,6 @@ const TOUR_STEPS = [
           "breathes, and the colours inside wander. On a board of sixty gems that " +
           "is a lot of motion, and it gives some players a headache.",
     panels: { labels: ["Still", "Moving"] },
-    sample: null,
     options: [
       { label: "Still", choose: chooseShimmerOff, isPicked: shimmerIsOff },
       { label: "Moving", choose: chooseShimmerOn, isPicked: shimmerIsOn }
@@ -11262,7 +11315,6 @@ const TOUR_STEPS = [
     copy: "Every break, blast and shatter is played as it happens. Nothing here " +
           "is a file: the game builds each sound as it needs it.",
     panels: null,
-    sample: { label: "Hear a break", play: playSfxSample },
     options: [
       { label: "Off", choose: chooseSfxOff, isPicked: sfxIsOff },
       { label: "On", choose: chooseSfxOn, isPicked: sfxIsOn }
@@ -11276,7 +11328,6 @@ const TOUR_STEPS = [
     title: "Music?",
     copy: "A quiet ambient bed that plays under the whole run.",
     panels: null,
-    sample: { label: "Hear it", play: playMusicSample },
     options: [
       { label: "Off", choose: chooseMusicOff, isPicked: musicIsOff },
       { label: "On", choose: chooseMusicOn, isPicked: musicIsOn }
@@ -11292,7 +11343,6 @@ const TOUR_STEPS = [
           "The hint button is always there either way, so turning this off only " +
           "stops it offering unasked.",
     panels: null,
-    sample: null,
     options: [
       { label: "Off", choose: chooseHintsOff, isPicked: hintsAreOff },
       { label: "On", choose: chooseHintsOn, isPicked: hintsAreOn }
@@ -11353,11 +11403,6 @@ function shimmerNoteForTour() {
   return "The stones will hold still. They are still cut stones, with the movement taken out.";
 }
 
-function playSfxSample() {
-  ensureAudio();
-  playShatter(9);
-}
-
 function chooseSfxOff() {
   sound.enabled = false;
   saveSettings();
@@ -11388,14 +11433,6 @@ function musicCanBeHeard() {
   return music.fileFailed === false;
 }
 
-function playMusicSample() {
-  ensureAudio();
-  setMusicForLevel(1);
-  music.enabled = true;
-  syncMusic();
-  refreshTourStep();
-}
-
 function chooseMusicOff() {
   music.enabled = false;
   syncMusic();
@@ -11404,8 +11441,10 @@ function chooseMusicOff() {
 
 function chooseMusicOn() {
   ensureAudio();
-  setMusicForLevel(1);
   music.enabled = true;
+
+  /* The screen this is asked from already knows which track it wants,
+     so turning music on only has to let it be heard. */
   syncMusic();
   saveSettings();
 }
@@ -11530,13 +11569,6 @@ function refreshTourStep() {
     for (let i = 0; i < step.panels.labels.length; i++) {
       tourPanels.appendChild(buildTourPanel(step, i));
     }
-  }
-
-  if (step.sample === null) {
-    tourSample.classList.add("hidden");
-  } else {
-    tourSample.textContent = step.sample.label;
-    tourSample.classList.remove("hidden");
   }
 
   /* A step with panels puts its choice under the pictures, where the
@@ -11674,11 +11706,6 @@ tourNext.addEventListener("click", function () { ensureAudio(); stepTour(1); });
 tourBack.addEventListener("click", function () { ensureAudio(); stepTour(-1); });
 tourSkip.addEventListener("click", function () { ensureAudio(); finishSettingsTour(); });
 
-tourSample.addEventListener("click", function () {
-  const live = tourStepsThatApply();
-  live[tour.stepIndex].sample.play();
-});
-
 /* The rules are long enough to need their own screen. Reached from the
    main menu and from a paused game, so it remembers which way is back. */
 let helpReturnsTo = "mainMenu";
@@ -11717,7 +11744,6 @@ function leaveHelpScreen() {
    fresh one. */
 function quitToMainMenu() {
   closeMenu();
-  stopMusic();
   showMainMenu();
 }
 
@@ -11827,6 +11853,7 @@ let settingsReturnsTo = "pauseMenu";
 function showSettingsPage(returnTo) {
   BackgroundHandler.close();
   settingsReturnsTo = returnTo;
+  setMusicForScreen("settings");
   menuTitle.textContent = "Settings";
   menuMain.classList.add("hidden");
   settingsPage.classList.remove("hidden");
@@ -11839,6 +11866,7 @@ function showSettingsPage(returnTo) {
 function leaveSettingsPage() {
   if (settingsReturnsTo === "mainMenu") {
     menuPanel.classList.add("hidden");
+    setMusicForScreen("mainMenu");
     return;
   }
   showMenuMain();
@@ -12059,9 +12087,8 @@ musicToggle.addEventListener("click", function () {
   refreshSettingsPage();
   saveSettings();
 
-  /* Switching music off stops the track outright and switching it back
-     on starts whatever the level asked for. With nothing wanted, which
-     is the case on the title card, both do nothing. */
+  /* Turning music back on starts the track selected by the current
+     screen or Settings overlay. */
   syncMusic();
 });
 
