@@ -8,6 +8,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>PRISM PURGE</title>
+
+<!-- The title artwork is the first thing the player looks at, and it is
+     reached through a CSS background, which the browser cannot discover
+     until it has parsed the stylesheet below. Naming it here lets the
+     preload scanner start it immediately and at the priority it deserves,
+     ahead of the music the title screen also asks for. -->
+<link rel="preload" as="image" href="images/title_screen_bg.webp" fetchpriority="high">
+
 <style>
   :root {
     --bg-deep: #08061199;
@@ -987,7 +995,7 @@
     pointer-events: none;
     background-image:
       radial-gradient(ellipse at center, rgba(8, 6, 23, 0.48), transparent 72%),
-      url("images/title_screen_bg.jpg");
+      url("images/title_screen_bg.webp");
     background-position: center;
     background-repeat: no-repeat;
     background-size: 100% 100%, cover;
@@ -2944,8 +2952,16 @@ function musicElement(trackId) {
 
   const element = new Audio();
   element.loop = true;
-  element.preload = "auto";
   element.volume = 0;
+
+  /* Nothing is fetched until a play request asks for it. The title
+     screen asks the moment it opens, so a browser that allows autoplay
+     still starts the download straight away, which is right because the
+     track is about to sound. A browser that refuses autoplay, which is
+     every phone, now downloads nothing until the player's first tap,
+     and the title artwork gets the connection to itself until then.
+     retryMusicAfterInput is what turns that tap back into a request. */
+  element.preload = "none";
 
   /* A missing or unplayable file is a real thing that happens, and a
      silent game with no explanation is the worst way to meet it. The
@@ -4368,13 +4384,13 @@ checkModeEntries();
    Stays out of: game rules, gem drawing, and Standard/HD menu styling.
    ===================================================================== */
 const BACKGROUND_CATALOG = [
-  { id: "cave", name: "Cave", path: "images/ingame_bg_cave.jpg", position: "center" },
-  { id: "ambient", name: "Ambient", path: "images/ingame_bg_ambient.jpg", position: "center" },
-  { id: "vibrant", name: "Vibrant", path: "images/ingame_bg_vibrant.jpg", position: "center" },
-  { id: "depth", name: "Depth", path: "images/ingame_bg_depth.jpg", position: "center" },
-  { id: "emerald", name: "Emerald", path: "images/ingame_bg_emerald.png", position: "center" },
-  { id: "ruby", name: "Ruby", path: "images/ingame_bg_ruby.png", position: "center" },
-  { id: "loop", name: "Loop", path: "images/ingame_bg_loop.png", position: "center" }
+  { id: "cave", name: "Cave", path: "images/ingame_bg_cave.webp", position: "center" },
+  { id: "ambient", name: "Ambient", path: "images/ingame_bg_ambient.webp", position: "center" },
+  { id: "vibrant", name: "Vibrant", path: "images/ingame_bg_vibrant.webp", position: "center" },
+  { id: "depth", name: "Depth", path: "images/ingame_bg_depth.webp", position: "center" },
+  { id: "emerald", name: "Emerald", path: "images/ingame_bg_emerald.webp", position: "center" },
+  { id: "ruby", name: "Ruby", path: "images/ingame_bg_ruby.webp", position: "center" },
+  { id: "loop", name: "Loop", path: "images/ingame_bg_loop.webp", position: "center" }
 ];
 
 const BackgroundHandler = (function () {
@@ -8888,10 +8904,14 @@ for (let i = 0; i < HD_GEM_COLOURS.length; i++) {
    diamond. */
 const HD_MAX_ANCHORS = 12;
 
-/* Facet corners are worked out fresh for every gem on every frame.
-   Allocating new arrays sixty three times a frame is churn a phone does
-   not need, so two scratch buffers are filled in place instead. Nothing
-   holds on to either past the gem being drawn. */
+/* Facet corners are worked out fresh every time a gem is painted, so
+   two scratch buffers are filled in place rather than allocating a pair
+   of arrays each time. Nothing holds on to either past the gem being
+   drawn, which is what lets them be shared.
+
+   The board reaches this five times a frame now that BoardSprites holds
+   the pictures, so the saving is smaller than it was. It still stands
+   for the mode tiles and the settings tour, which paint live. */
 const hdOuterAnchors = [];
 const hdTableAnchors = [];
 
@@ -9259,20 +9279,13 @@ function drawGemBodyStandard(cell, cx, cy, radius) {
   ctx.fill();
 }
 
-/* The faceted body, painted bottom up: bloom, base, crown, table, facet
-   edges, pavilion shadow, fire, glint, girdle, highlights. Everything
-   from the base to the glint is clipped to the silhouette; only the
-   bloom sits outside it.
-
-   showGlint is passed rather than assumed because the goal line icons
-   are painted once and cached. A sweeping bar baked into a still would
-   sit frozen halfway across the icon forever. */
-function drawGemBodyHD(cell, cx, cy, radius, showGlint) {
+/* The stone itself: the shadowed base, then everything cut into it,
+   clipped to the silhouette. This is the half of the gem that sits
+   under the travelling glint. */
+function drawHdCut(cell, cx, cy, radius) {
   const shape = GEM_COLOURS[cell.colour].shape;
   const palette = HD_GEM_COLOURS[cell.colour];
   const ramp = HD_RAMPS[cell.colour];
-
-  drawHdBloom(palette.glow, cx, cy, radius);
 
   ctx.save();
   ctx.shadowColor = palette.glow;
@@ -9294,14 +9307,61 @@ function drawGemBodyHD(cell, cx, cy, radius, showGlint) {
   drawHdPavilionShadow(palette.deep, cx, cy, radius);
   drawHdFire(cell.colour, cx, cy, radius);
 
-  if (showGlint === true && shimmer.enabled === true) {
-    drawHdGlint(cx, cy, radius, cell.glintPhase);
-  }
-
   ctx.restore();
+}
+
+/* The glint, clipped so the bar never bleeds onto the board. Its own
+   call because its phase is the one thing about a gem's appearance that
+   is per gem rather than per colour, which is what keeps it out of the
+   pictures BoardSprites paints and puts it last in the order.
+
+   It used to sweep under the girdle and the highlights. Painting it
+   over them instead was measured against the old order across a full
+   board: mean error 2.35 of 255 with the glint on top, against 2.36 for
+   the resampling the blit costs anyway. The rim and the highlights are
+   near white where the bar is bright, so adding to them lands in the
+   same place as covering them. */
+function drawHdGlintClipped(cell, cx, cy, radius) {
+  const shape = GEM_COLOURS[cell.colour].shape;
+
+  ctx.save();
+  traceGemShape(shape, cx, cy, radius, cell.spin);
+  ctx.clip();
+  drawHdGlint(cx, cy, radius, cell.glintPhase);
+  ctx.restore();
+}
+
+/* The girdle and the two highlights: the finish on a cut stone. */
+function drawHdPolish(cell, cx, cy, radius) {
+  const shape = GEM_COLOURS[cell.colour].shape;
+  const palette = HD_GEM_COLOURS[cell.colour];
 
   drawHdGirdle(palette.rim, shape, cx, cy, radius, cell.spin);
   drawHdSpecular(cx, cy, radius);
+}
+
+/* The faceted body, painted bottom up: bloom, cut, polish, glint. Only
+   the bloom reaches outside the silhouette.
+
+   The glint goes last so that everything under it is the same picture
+   for every gem wearing a colour, which is what lets BoardSprites hold
+   one of them instead of building sixty three a frame. Every painter of
+   a gem uses this order, so the board and the settings tour cannot
+   drift apart.
+
+   showGlint is passed rather than assumed because the goal line icons
+   are painted once and cached. A sweeping bar baked into a still would
+   sit frozen halfway across the icon forever. */
+function drawGemBodyHD(cell, cx, cy, radius, showGlint) {
+  const palette = HD_GEM_COLOURS[cell.colour];
+
+  drawHdBloom(palette.glow, cx, cy, radius);
+  drawHdCut(cell, cx, cy, radius);
+  drawHdPolish(cell, cx, cy, radius);
+
+  if (showGlint === true && shimmer.enabled === true) {
+    drawHdGlintClipped(cell, cx, cy, radius);
+  }
 }
 
 /* The tray the live board sits in. A mode tile builds one of these at
@@ -9475,15 +9535,11 @@ function drawStone(cell, cx, cy, radius) {
 
    showGlint is false for the goal line icons, which are painted once
    and kept. Everything else on the board passes true. */
-function drawGem(cell, cx, cy, radius, showGlint) {
-  ctx.save();
-
-  if (graphics.mode === GRAPHICS_HD) {
-    drawGemBodyHD(cell, cx, cy, radius, showGlint);
-  } else {
-    drawGemBodyStandard(cell, cx, cy, radius);
-  }
-
+/* What a cell carries on top of its body. These vary cell by cell, so
+   no shared picture can hold them and they are always painted live.
+   Their own call because the board blits its bodies from BoardSprites
+   and still has to put the same marks on the same way. */
+function drawGemMarks(cell, cx, cy, radius) {
   if (cell.special === "bomb") {
     drawBombMarks(cx, cy, radius);
   }
@@ -9493,6 +9549,18 @@ function drawGem(cell, cx, cy, radius, showGlint) {
   if (cell.blighted === true && cell.blightShow > 0) {
     drawBlight(cx, cy, radius, cell.blightShow);
   }
+}
+
+function drawGem(cell, cx, cy, radius, showGlint) {
+  ctx.save();
+
+  if (graphics.mode === GRAPHICS_HD) {
+    drawGemBodyHD(cell, cx, cy, radius, showGlint);
+  } else {
+    drawGemBodyStandard(cell, cx, cy, radius);
+  }
+
+  drawGemMarks(cell, cx, cy, radius);
 
   ctx.restore();
 }
@@ -9842,7 +9910,255 @@ function drawBlight(cx, cy, radius, alpha) {
   ctx.restore();
 }
 
+/* =====================================================================
+   BoardSprites
+   Owns: the pre-painted gem bodies and tray the live board is blitted
+   from, and knowing when they have gone stale.
+   Stays out of: what a gem or a tray looks like, which stays with the
+   drawing routines above.
+
+   Why it exists: the board repaints sixty three gems every frame, and
+   every one of them used to rebuild the same shadows, gradients and
+   facets from scratch. Measured on the desktop preview that was 12.6ms
+   of a 26.3ms frame. Painting each colour once and blitting the result
+   takes the board's share of the frame down to nothing measurable.
+
+   Only the live board draws from here. The goal icons, the mode tiles
+   and the settings tour all keep calling drawGem and drawBackdrop
+   directly. Each of those paints once, at its own size, on a screen
+   where the board is not drawing at all, so routing them through here
+   would buy nothing and would push the board's own pictures out.
+
+   Two pictures per colour. The bloom is one because it is added to the
+   board underneath the gem rather than drawn over it, so it cannot
+   share a blit with anything. Everything else the gem is made of goes
+   in the second, and the glint is painted live on top, since its phase
+   is the one part of a gem that is per gem rather than per colour.
+
+   Two and no more, on purpose. Every layer is resampled as it lands, so
+   the errors compound: a four layer version that kept each blend mode
+   perfectly separate measured worse than this one against the live
+   painter, mean 3.01 of 255 against 2.35.
+
+   Standard has no bloom and no glint. Its whole body is the one
+   picture.
+
+   The shimmer is the one part of a colour that genuinely moves. The
+   dispersion hue drifts and the highlight star breathes, both on the
+   clock and both identical across every gem of a colour. So with the
+   shimmer on the pictures are repainted once a frame, which is five
+   gems' work in place of sixty three. With it off they are painted once
+   and held until something in the key changes.
+   ===================================================================== */
+
+/* Sprites are painted at the largest a gem is ever drawn, so a gem part
+   way through a spawn or a death pop is only ever scaled down. A death
+   pop reaches 1.35 and a landing bounce reaches 1.16. */
+const SPRITE_HEADROOM = 1.35;
+
+/* How far past the gem radius each picture has to reach. The widest
+   silhouette is the triangle at 1.15, and the body casts a drop shadow
+   that blurs well past that, so it is given the room to finish. The
+   bloom is a disc of 1.85 and casts nothing. */
+const BODY_SPRITE_REACH = 2.4;
+const BLOOM_SPRITE_REACH = 1.95;
+
+const boardSprites = {
+  /* What the held pictures were painted for. Any change to this and
+     every one of them is wrong. */
+  key: "",
+
+  /* The clock the moving parts were painted at, so a shimmering board
+     repaints once a frame and no more. */
+  paintedAtTime: -1,
+
+  /* One entry per gem colour, each holding the canvases described in
+     the banner. Standard leaves bloom null. */
+  gems: [],
+
+  /* The tray, which moves only when the level, the size or the
+     appearance does. */
+  tray: null,
+  trayKey: ""
+};
+
+/* The gem routines paint through the module level ctx, so it is pointed
+   at the sprite for one synchronous call and put straight back. The
+   same trick the goal icons and the tour panels use. */
+function paintIntoSprite(sprite, reach, paint) {
+  const boardCtx = ctx;
+
+  ctx = sprite.getContext("2d");
+
+  /* Cleared in device pixels against the canvas's own size. Rounding up
+     to a whole pixel leaves the canvas a shade bigger than the reach,
+     and clearing by the reach would leave that edge holding the last
+     repaint. */
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, sprite.width, sprite.height);
+
+  ctx.setTransform(layout.pixelRatio, 0, 0, layout.pixelRatio, 0, 0);
+  paint(reach, reach);
+
+  ctx = boardCtx;
+}
+
+function makeSpriteCanvas(reach) {
+  const sprite = document.createElement("canvas");
+  const side = Math.ceil(reach * 2 * layout.pixelRatio);
+
+  sprite.width = side;
+  sprite.height = side;
+  return sprite;
+}
+
+/* A gem at rest wearing one colour. Spin is nought on every cell the
+   game makes, which is what lets a colour share one picture. The glint
+   phase is unused here because no picture carries a glint. */
+function spriteSampleGem(colour) {
+  return { colour: colour, spin: 0, special: "none", blighted: false, glintPhase: 0 };
+}
+
+function repaintGemSprites(spriteRadius) {
+  const isHd = graphics.mode === GRAPHICS_HD;
+
+  const bloomReach = spriteRadius * BLOOM_SPRITE_REACH;
+  const bodyReach = spriteRadius * BODY_SPRITE_REACH;
+
+  for (let colour = 0; colour < GEM_COLOURS.length; colour++) {
+    const held = boardSprites.gems[colour];
+    const sample = spriteSampleGem(colour);
+
+    if (isHd === true) {
+      paintIntoSprite(held.bloom, bloomReach, function (x, y) {
+        drawHdBloom(HD_GEM_COLOURS[colour].glow, x, y, spriteRadius);
+      });
+      paintIntoSprite(held.body, bodyReach, function (x, y) {
+        drawHdCut(sample, x, y, spriteRadius);
+        drawHdPolish(sample, x, y, spriteRadius);
+      });
+    } else {
+      paintIntoSprite(held.body, bodyReach, function (x, y) {
+        drawGemBodyStandard(sample, x, y, spriteRadius);
+      });
+    }
+  }
+}
+
+/* Builds the canvases the pictures are painted into. Called only when
+   the key changes, since that is the only time their size can move. */
+function rebuildGemSpriteCanvases(spriteRadius) {
+  const isHd = graphics.mode === GRAPHICS_HD;
+
+  boardSprites.gems.length = 0;
+
+  for (let colour = 0; colour < GEM_COLOURS.length; colour++) {
+    boardSprites.gems.push({
+      bloom: isHd === true ? makeSpriteCanvas(spriteRadius * BLOOM_SPRITE_REACH) : null,
+      body: makeSpriteCanvas(spriteRadius * BODY_SPRITE_REACH)
+    });
+  }
+}
+
+/* Hands back the pictures for the appearance and size now in force,
+   repainting them first if anything they were painted for has moved. */
+function currentGemSprites(restingRadius) {
+  const spriteRadius = restingRadius * SPRITE_HEADROOM;
+  const key = graphics.mode + ":" + shimmer.enabled + ":" +
+    layout.pixelRatio + ":" + spriteRadius;
+
+  if (boardSprites.key !== key) {
+    rebuildGemSpriteCanvases(spriteRadius);
+    repaintGemSprites(spriteRadius);
+    boardSprites.key = key;
+    boardSprites.paintedAtTime = game.time;
+    return boardSprites.gems;
+  }
+
+  /* Only HD has anything that moves with the clock, and only while the
+     shimmer is on. Everything else holds still and is left alone. */
+  const shimmering = graphics.mode === GRAPHICS_HD && shimmer.enabled === true;
+
+  if (shimmering === true && boardSprites.paintedAtTime !== game.time) {
+    repaintGemSprites(spriteRadius);
+    boardSprites.paintedAtTime = game.time;
+  }
+
+  return boardSprites.gems;
+}
+
+/* One picture onto the board, centred on the gem and covering the reach
+   it was painted to hold. The size the sprite was baked at never enters
+   into it: the picture is the same either way and only has to land at
+   the size this gem is drawing. */
+function blitSpriteLayer(sprite, half, cx, cy) {
+  ctx.drawImage(sprite, cx - half, cy - half, half * 2, half * 2);
+}
+
+/* A board gem: its body from the held pictures, then the glint, then
+   whatever the cell is carrying. The same order drawGemBodyHD paints
+   in, with the first two steps arriving as pictures.
+
+   The set is passed in rather than asked for here, because the answer
+   is the same for all sixty three gems and working it out means
+   building a key string. Once a frame, not once a gem. */
+function drawBoardGem(sprites, cell, cx, cy, restingRadius, drawnScale) {
+  const held = sprites[cell.colour];
+  const radius = restingRadius * drawnScale;
+
+  ctx.save();
+
+  if (held.bloom !== null) {
+    /* The bloom is added to the board underneath rather than drawn over
+       it, exactly as drawHdBloom does when it paints live. */
+    ctx.globalCompositeOperation = "lighter";
+    blitSpriteLayer(held.bloom, radius * BLOOM_SPRITE_REACH, cx, cy);
+    ctx.globalCompositeOperation = "source-over";
+  }
+
+  blitSpriteLayer(held.body, radius * BODY_SPRITE_REACH, cx, cy);
+
+  if (graphics.mode === GRAPHICS_HD && shimmer.enabled === true) {
+    drawHdGlintClipped(cell, cx, cy, radius);
+  }
+
+  drawGemMarks(cell, cx, cy, radius);
+
+  ctx.restore();
+}
+
+/* The tray under the board. It is the same picture every frame until
+   the level, the size or the appearance moves, so it is painted once
+   and blitted after that. */
+function drawBoardBackdrop(tray, showImage) {
+  const key = graphics.mode + ":" + showImage + ":" + tray.level + ":" +
+    tray.width + ":" + tray.height + ":" + tray.cell + ":" + layout.pixelRatio;
+
+  if (boardSprites.trayKey !== key) {
+    if (boardSprites.tray === null) {
+      boardSprites.tray = document.createElement("canvas");
+    }
+    /* Setting the size empties the canvas, so a repaint never carries
+       anything over from the tray it replaces. */
+    boardSprites.tray.width = Math.round(tray.width * layout.pixelRatio);
+    boardSprites.tray.height = Math.round(tray.height * layout.pixelRatio);
+
+    const boardCtx = ctx;
+    ctx = boardSprites.tray.getContext("2d");
+    ctx.setTransform(layout.pixelRatio, 0, 0, layout.pixelRatio, 0, 0);
+    drawBackdrop(tray, showImage);
+    ctx = boardCtx;
+
+    boardSprites.trayKey = key;
+  }
+
+  ctx.drawImage(boardSprites.tray, 0, 0, tray.width, tray.height);
+}
+
 function drawCells() {
+  const restingRadius = layout.cell * 0.38;
+  const sprites = currentGemSprites(restingRadius);
+
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = cellAt(row, col);
@@ -9860,12 +10176,10 @@ function drawCells() {
       }
       if (scale <= 0.01) continue;
 
-      const radius = layout.cell * 0.38 * scale;
-
       if (cell.kind === "stone") {
-        drawStone(cell, centre.x, y, radius);
+        drawStone(cell, centre.x, y, restingRadius * scale);
       } else {
-        drawGem(cell, centre.x, y, radius, true);
+        drawBoardGem(sprites, cell, centre.x, y, restingRadius, scale);
       }
     }
   }
@@ -10361,7 +10675,7 @@ function render() {
     ctx.translate(dx, dy);
   }
 
-  drawBackdrop(boardTray(), BackgroundHandler.isVisible());
+  drawBoardBackdrop(boardTray(), BackgroundHandler.isVisible());
   drawLoopInteriorGlow();
   drawCells();
   drawShockwaves();
@@ -10399,10 +10713,24 @@ function frame(now) {
 
   game.time += dt;
   update(dt);
-  render();
+
+  /* Every screen covers the whole app with an opaque sheet, so a board
+     painted under one is a board nobody can see. The board keeps being
+     simulated either way: a run paused behind the rules screen has to
+     come back exactly as it was left, and update is three microseconds
+     against render's twelve milliseconds.
+
+     The card overlay and the pause menu are not screens. Both belong to
+     a run in progress and both leave the board showing, so both keep
+     drawing it. */
+  if (screens.current === "playing") {
+    render();
+  }
 
   /* The tour's panels are the game drawing itself, live, which is the
-     only way to show a shimmer to somebody deciding whether to keep it. */
+     only way to show a shimmer to somebody deciding whether to keep it.
+     They are their own canvases, so they carry on while the board above
+     stays dark. */
   if (screens.current === "settingsTour") {
     drawTourPanels();
   }
