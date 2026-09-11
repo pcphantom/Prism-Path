@@ -5252,14 +5252,17 @@ const BackgroundHandler = (function () {
    Starting and advancing a run
    ------------------------------------------------------------------ */
 
-function startRun(modeId, difficulty) {
+/* customRules is the rules a Custom run plays by, handed in so the caller
+   says which: the start screen hands in the picks, and Play Again hands
+   in the rules of the run that just ended. Every other mode passes null.
+   The run keeps its own copy, so the setup screen can be changed
+   underneath it. */
+function startRun(modeId, difficulty, customRules) {
   game.modeId = modeId;
   game.difficulty = difficulty;
 
-  /* A Custom run plays the picks as they stood when it began, on its own
-     copy, so the setup screen can be changed underneath it. */
   if (modeId === "custom") {
-    game.customRules = cloneCustomRules(customPicks);
+    game.customRules = cloneCustomRules(customRules);
     applyCustomRules(game.customRules, "the rules this Custom run was begun on");
   } else {
     game.customRules = null;
@@ -8213,7 +8216,7 @@ function endRun(title, subtitle) {
     "<div class='rule'><span class='pip'>&#9733;</span><span>Close a loop to wipe a whole colour when the board gets crowded.</span></div>",
     "Play Again",
     function () {
-      startRun(game.modeId, game.difficulty);
+      startRun(game.modeId, game.difficulty, game.customRules);
       hideCard();
     },
     "Quit to Menu",
@@ -13480,7 +13483,9 @@ function quitToMainMenu() {
 }
 
 function enterRun(modeId, difficulty) {
-  startRun(modeId, difficulty);
+  let customRules = null;
+  if (modeId === "custom") customRules = customPicks;
+  startRun(modeId, difficulty, customRules);
   showScreen("playing");
 }
 
