@@ -4117,6 +4117,7 @@ const GAME_MODES = [
     rebuildsBoardEachLevel: true,
     refillsClearedCells: true,
     rerollsDeadBoard: true,
+    showsLevelClearCard: true,
 
     goalIsMet: goalReached,
     makeGoalForLevel: makeGoalForLevel,
@@ -4163,6 +4164,7 @@ const GAME_MODES = [
     rebuildsBoardEachLevel: true,
     refillsClearedCells: true,
     rerollsDeadBoard: true,
+    showsLevelClearCard: true,
 
     goalIsMet: goalReached,
     makeGoalForLevel: makeGoalForLevel,
@@ -4206,10 +4208,12 @@ const GAME_MODES = [
     items: ENDLESS_ITEMS,
     linkRules: STANDARD_LINK_RULES,
 
-    /* The whole point of the mode. */
+    /* The whole point of the mode. The level rises and play carries
+       straight on, with nothing put in front of the board. */
     rebuildsBoardEachLevel: false,
     refillsClearedCells: true,
     rerollsDeadBoard: true,
+    showsLevelClearCard: false,
 
     goalIsMet: goalReached,
     makeGoalForLevel: makeGoalForLevel,
@@ -4260,6 +4264,7 @@ const GAME_MODES = [
        again out of nowhere. */
     refillsClearedCells: false,
     rerollsDeadBoard: false,
+    showsLevelClearCard: true,
 
     goalIsMet: eliminationGoalIsMet,
     makeGoalForLevel: makeEliminationGoal,
@@ -4356,7 +4361,7 @@ function activeLinkRules() {
 const MODE_FIELDS = [
   "id", "name", "blurb", "rulesHtml", "difficulties", "difficultySummary",
   "hazards", "tileGems", "drawTileMark", "items", "linkRules", "rebuildsBoardEachLevel",
-  "refillsClearedCells", "rerollsDeadBoard", "goalIsMet", "makeGoalForLevel",
+  "refillsClearedCells", "rerollsDeadBoard", "showsLevelClearCard", "goalIsMet", "makeGoalForLevel",
   "layOutHazards", "advanceHazards", "startBudget",
   "levelClearBonus", "levelClearSubtitle", "nextLevelWarning", "spendOnLink",
   "lossBeforeGoal",
@@ -7475,6 +7480,21 @@ function completeLevel() {
 
   game.blightCarry = countBlight();
   playFanfare();
+
+  /* A mode that shows no card goes straight on to the next level. The
+     level number in the HUD and the goal line change under the player,
+     so the one toast says which level this is now, and that a continue
+     came with it when one did. */
+  if (mode.showsLevelClearCard === false) {
+    const nextLevel = game.level + 1;
+    if (earned > 0) {
+      showToast("LEVEL " + nextLevel + ", CONTINUE EARNED", "#ffffff");
+    } else {
+      showToast("LEVEL " + nextLevel, "#ffffff");
+    }
+    advanceToNextLevel();
+    return;
+  }
 
   let body = "";
   if (bonus.amount > 0) {
