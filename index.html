@@ -1827,7 +1827,9 @@
      - Release with 3 or more linked and they burst.
      - Cross your own path to close a loop: every gem of that colour
        on the board is wiped out.
-     - 5 or 6 linked forges a Bomb. 7 or more forges a Prism.
+     - 5 or 6 linked forges a Bomb. 7 or more forges a Prism. 12 or
+       more forges a Chromatic, which joins any colour and lets the link
+       change colour on the far side of it.
      - The Blight creeps across the board and ends the run if it
        takes fifteen cells. Linking a blighted gem cures it.
    ================================================================== */
@@ -1941,21 +1943,25 @@ const HIT_RADIUS = 0.55;
    names its own, so nothing at play time reads the bare constants: the
    number in play is the mode's to say. */
 const MIN_LINK = 3;
-const BOMB_LINK = 5;      // linking this many forges a bomb
-const PRISM_LINK = 7;     // linking this many forges a prism
+const BOMB_LINK = 5;        // linking this many forges a bomb
+const PRISM_LINK = 7;       // linking this many forges a prism
+const CHROMATIC_LINK = 12;  // linking this many forges a chromatic
 
 const STANDARD_LINK_RULES = {
   minLink: MIN_LINK,
   bombEnabled: true,
   bombLink: BOMB_LINK,
   prismEnabled: true,
-  prismLink: PRISM_LINK
+  prismLink: PRISM_LINK,
+  chromaticEnabled: true,
+  chromaticLink: CHROMATIC_LINK
 };
 
 /* What a link of this length leaves standing on its last gem under the
    rules in play. Checked from the strongest tier down, so the longest
    link forges the strongest gem, and "none" when it reaches no tier. */
 function forgeKindForLink(length, rules) {
+  if (rules.chromaticEnabled === true && length >= rules.chromaticLink) return "chromatic";
   if (rules.prismEnabled === true && length >= rules.prismLink) return "prism";
   if (rules.bombEnabled === true && length >= rules.bombLink) return "bomb";
   return "none";
@@ -2083,7 +2089,7 @@ function makeGem(colourIndex) {
   return {
     kind: "gem",
     colour: colourIndex,
-    special: "none",     // "none" | "bomb" | "prism"
+    special: "none",     // "none" | "bomb" | "prism" | "chromatic"
     blighted: false,
     blightAge: 0,        // moves spent infected, counts up to the walk
     blightShow: 1,       // 1 visible, 0 hidden, below 0 still crawling in
@@ -2172,7 +2178,14 @@ const game = {
   modeId: "classic",
   difficulty: "normal",  // the selector that sets this arrives with the difficulty work
   path: [],              // list of {row, col} making up the current link
+
+  /* A link is a run of colour segments. A chromatic gem closes the
+     segment it lands in and the next plain gem opens another, so the
+     link holds every segment colour in order and the colour of the one
+     being drawn. Both are derived from the path by readPathColours and
+     never maintained by hand. -1 while no segment is fixed. */
   pathColour: -1,
+  pathColours: [],
   loopClosed: false,
   score: 0,
   level: 1,
@@ -3691,7 +3704,7 @@ const TIME_ATTACK_BUDGET_RESCUE = {
 };
 
 function timeAttackRulesHtml() {
-  return howToPlayHtml() + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES) + hazardRulesHtml() +
     "<div class='rule'><span class='pip'>&#9201;</span><span>The <b>clock</b> replaces the move budget. It runs while you are looking at the board and stops for menus, for cards, and while gems are bursting.</span></div>" +
     "<div class='rule'><span class='pip'>&#8679;</span><span><b>+Time</b> takes the place of +2 Moves. Every second left when a level clears is worth <b>" + SECONDS_BONUS_EACH + "</b> points.</span></div>" +
     retryContinueRuleHtml();
@@ -3894,7 +3907,7 @@ const ENDLESS_ITEMS = [
 ];
 
 function endlessRulesHtml() {
-  return howToPlayHtml() + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES) + hazardRulesHtml() +
     "<div class='rule'><span class='pip'>&#8734;</span><span>Nothing runs out. The <b>board is never cleared</b>: meeting a goal raises the level and play carries straight on where it stood.</span></div>" +
     "<div class='rule'><span class='pip'>&#9760;</span><span>Because nothing sweeps the board, the <b>Blight</b> only ever leaves by being cured. It is the one thing that can end a run.</span></div>" +
     "<div class='rule'><span class='pip'>&#8853;</span><span><b>Snipe</b> takes the place of +2 Moves. Put the crosshair on any gem and it is gone.</span></div>" +
@@ -4049,7 +4062,7 @@ const ELIMINATION_ITEMS = [
 ];
 
 function eliminationRulesHtml() {
-  return howToPlayHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES) +
     "<div class='rule'><span class='pip'>&#9633;</span><span>Nothing falls in to replace what you clear. The board <b>drains</b>, and the gems above slide down into the gaps.</span></div>" +
     "<div class='rule'><span class='pip'>&#9679;</span><span>The level runs until <b>nothing links</b>. Meet the quota by then and it is cleared. Fall short and it is not.</span></div>" +
     "<div class='rule'><span class='pip'>&#9819;</span><span>Empty the board completely for a <b>perfect clear</b> worth " + PERFECT_CLEAR_BONUS + ". Three gems is the shortest link there is, so a few always end up stranded.</span></div>" +
@@ -4723,6 +4736,7 @@ function startLevel(rebuildBoard) {
   game.movesSinceBlight = 0;
   game.path = [];
   game.pathColour = -1;
+  game.pathColours = [];
   game.loopClosed = false;
   game.aiming = "none";
   game.scoreAtLevelStart = game.score;
@@ -5148,14 +5162,72 @@ function areNeighbours(a, b) {
   return dr <= 1 && dc <= 1 && (dr + dc) > 0;
 }
 
-/* A prism gem slots into a link of any colour. The colour so far is
-   passed in rather than read off the game, because the hint search
-   walks links the player has not drawn. */
+/* A prism gem slots into a link of any colour, and so does a chromatic.
+   The colour so far is passed in rather than read off the game, because
+   the hint search walks links the player has not drawn. */
 function cellMatchesPath(cell, pathColour) {
   if (cell.kind !== "gem") return false;
   if (cell.special === "prism") return true;
+  if (cell.special === "chromatic") return true;
   if (pathColour === -1) return true;
   return cell.colour === pathColour;
+}
+
+/* What colours a path holds, read off the path itself.
+
+   Every plain gem belongs to a segment, a prism takes the colour of the
+   segment it is in, and a chromatic closes the segment it lands in. The
+   next plain gem after a chromatic opens a new segment of its own colour,
+   which may be the same colour again; nothing requires a change.
+
+   current is the colour of the segment being drawn, -1 while none is
+   fixed. all is every segment colour in order. The hint search reads
+   paths it has not drawn, so this takes the path as an argument. */
+function readPathColours(path) {
+  let current = -1;
+  const all = [];
+  let hasChromatic = false;
+
+  for (let i = 0; i < path.length; i++) {
+    const cell = cellAt(path[i].row, path[i].col);
+
+    if (cell.special === "chromatic") {
+      hasChromatic = true;
+      current = -1;
+      continue;
+    }
+    if (cell.special === "prism") continue;
+
+    if (current === -1) {
+      current = cell.colour;
+      all.push(cell.colour);
+    }
+  }
+
+  return { current: current, all: all, hasChromatic: hasChromatic };
+}
+
+/* Re-derives the live path's colours after every change to it. */
+function syncPathColours() {
+  const colours = readPathColours(game.path);
+  game.pathColour = colours.current;
+  game.pathColours = colours.all;
+}
+
+/* The colour the live link paints with: the segment being drawn, else
+   the last one fixed, else violet, which is what a link made only of
+   specials has always been painted. */
+function pathPaintColour() {
+  if (game.pathColour !== -1) return game.pathColour;
+  if (game.pathColours.length > 0) return game.pathColours[game.pathColours.length - 1];
+  return 4;
+}
+
+/* Whether the live link is a ring that could close: a loop needs a
+   colour to sweep, so at least one segment has to be fixed. A ring that
+   ends on a chromatic has no current colour and is still a loop. */
+function pathHasAColour() {
+  return game.pathColours.length > 0;
 }
 
 /* A ring of linked gems only counts as a loop if it has at least one
@@ -5240,6 +5312,7 @@ function loopInteriorSummary(path) {
     cells: inside,
     bombs: [],
     prisms: [],
+    chromatics: [],
     stones: [],
     blighted: []
   };
@@ -5256,6 +5329,7 @@ function loopInteriorSummary(path) {
 
     if (cell.special === "bomb") summary.bombs.push(spot);
     if (cell.special === "prism") summary.prisms.push(spot);
+    if (cell.special === "chromatic") summary.chromatics.push(spot);
     if (cell.blighted === true) summary.blighted.push(spot);
   }
 
@@ -5265,6 +5339,7 @@ function loopInteriorSummary(path) {
 function loopCaughtSomething(summary) {
   if (summary.bombs.length > 0) return true;
   if (summary.prisms.length > 0) return true;
+  if (summary.chromatics.length > 0) return true;
   if (summary.stones.length > 0) return true;
   if (summary.blighted.length > 0) return true;
   return false;
@@ -5290,6 +5365,7 @@ function loopCentreCell(summary) {
 /* One toast line for the loop, so the loudest catch names itself. The
    marks drawn on the board show the rest. */
 function loopCatchLabel(summary) {
+  if (summary.chromatics.length > 0) return "LOOP + CHROMATIC";
   if (summary.prisms.length > 0) return "LOOP + PRISM";
   if (summary.bombs.length > 0) return "LOOP + BOMB";
   if (summary.stones.length > 0) return "LOOP + STONE";
@@ -5304,12 +5380,7 @@ function beginPath(row, col) {
 
   game.path = [{ row: row, col: col }];
   game.loopClosed = false;
-
-  if (cell.special === "prism") {
-    game.pathColour = -1;
-  } else {
-    game.pathColour = cell.colour;
-  }
+  syncPathColours();
 
   playLinkNote(0);
 }
@@ -5342,24 +5413,28 @@ function extendPath(row, col) {
     const previous = game.path[game.path.length - 2];
     if (previous.row === row && previous.col === col) {
       game.path.pop();
-      if (game.path.length === 1) {
-        const first = cellAt(game.path[0].row, game.path[0].col);
-        game.pathColour = first.special === "prism" ? -1 : first.colour;
-      }
+      syncPathColours();
       playTone(220, 0.08, "sine", 0.08);
       return;
     }
   }
 
   const cell = cellAt(row, col);
-  if (cellMatchesPath(cell, game.pathColour) === false) return;
+  const existingIndex = pathContains(row, col);
 
   /* Only coming back to the gem the link started on closes a loop, and
      only when the ring it makes has something inside it. Brushing the
-     middle of your own trail does nothing at all. */
-  const existingIndex = pathContains(row, col);
-  if (existingIndex !== -1) {
-    if (existingIndex === 0 && game.pathColour !== -1 && loopEnclosesACell(game.path) === true) {
+     middle of your own trail does nothing at all.
+
+     Ordinarily the first gem has to match the colour the ring is on. A
+     chromatic anywhere in the ring lifts that: the link may have changed
+     colour on the far side of it, and it is still one continuous link
+     back to where it began. */
+  if (existingIndex === 0) {
+    const colours = readPathColours(game.path);
+    const firstMatches = cellMatchesPath(cell, game.pathColour) === true || colours.hasChromatic === true;
+
+    if (firstMatches === true && pathHasAColour() === true && loopEnclosesACell(game.path) === true) {
       game.loopClosed = true;
       game.shake = Math.max(game.shake, 7);
       playTone(140, 0.5, "sawtooth", 0.16);
@@ -5373,19 +5448,20 @@ function extendPath(row, col) {
         game.shake = Math.max(game.shake, 10);
         playLoopArmed();
         showBurstToast(loopCatchLabel(summary), "#ffffff");
+      } else if (colours.hasChromatic === true) {
+        showBurstToast("CHROMATIC LOOP", "#ffffff");
       } else {
-        showBurstToast("LOOP!", GEM_COLOURS[game.pathColour].core);
+        showBurstToast("LOOP!", GEM_COLOURS[pathPaintColour()].core);
       }
     }
     return;
   }
+  if (existingIndex !== -1) return;
 
-  /* The first non-prism gem fixes the colour of the whole link. */
-  if (game.pathColour === -1 && cell.special !== "prism") {
-    game.pathColour = cell.colour;
-  }
+  if (cellMatchesPath(cell, game.pathColour) === false) return;
 
   game.path.push(candidate);
+  syncPathColours();
   playLinkNote(Math.min(game.path.length - 1, 16));
 }
 
@@ -5569,25 +5645,41 @@ function applyLoopInteriorEffects(summary, clearSet, tripleKeys, stoneShatter) {
     spawnShockwave(middle.x, middle.y, "#45e08a", reach, 0.7, layout.cell * 0.22, 0.12);
   }
 
-  /* The big one. Every gem on the board, and the rings that sell it. */
-  if (summary.prisms.length > 0) {
+  /* The big one. Every gem on the board, and the rings that sell it. A
+     trapped chromatic goes one further and meets the level's goal on
+     the spot, whatever it asked for: a colour or score goal is simply
+     full, a stone goal is full and every stone has gone with the nova
+     anyway, and a draining board is empty so nothing links. */
+  if (summary.chromatics.length > 0) {
     everyGemOnBoard(clearSet);
     sweeps = true;
-    game.shake = Math.max(game.shake, 22);
-    playPrismNova();
+    game.goal.progress = game.goal.target;
+    showBurstToast("CHROMATIC NOVA", "#ffffff");
+    spawnNovaEffects(centre, middle, reach);
+  } else if (summary.prisms.length > 0) {
+    everyGemOnBoard(clearSet);
+    sweeps = true;
     showBurstToast("PRISM NOVA", "#ffffff");
-    startScreenFlash("#ffffff", 0.5);
-
-    spawnShockwave(middle.x, middle.y, "#ffffff", reach, 0.55, layout.cell * 0.5, 0);
-    for (let i = 0; i < GEM_COLOURS.length; i++) {
-      const colour = GEM_COLOURS[i].core;
-      spawnShockwave(middle.x, middle.y, colour, reach, 0.75, layout.cell * 0.34, 0.07 + i * 0.06);
-    }
-    spawnNovaSparks(centre.row, centre.col);
+    spawnNovaEffects(centre, middle, reach);
   }
 
   if (sweeps === false) return null;
   return centre;
+}
+
+/* The shake, the flash, the rings and the sparks of a nova. Shared by
+   the two specials that set one off. */
+function spawnNovaEffects(centre, middle, reach) {
+  game.shake = Math.max(game.shake, 22);
+  playPrismNova();
+  startScreenFlash("#ffffff", 0.5);
+
+  spawnShockwave(middle.x, middle.y, "#ffffff", reach, 0.55, layout.cell * 0.5, 0);
+  for (let i = 0; i < GEM_COLOURS.length; i++) {
+    const colour = GEM_COLOURS[i].core;
+    spawnShockwave(middle.x, middle.y, colour, reach, 0.75, layout.cell * 0.34, 0.07 + i * 0.06);
+  }
+  spawnNovaSparks(centre.row, centre.col);
 }
 
 function resolvePath() {
@@ -5596,6 +5688,7 @@ function resolvePath() {
   if (game.path.length < rules.minLink) {
     game.path = [];
     game.pathColour = -1;
+    game.pathColours = [];
     game.loopClosed = false;
     return;
   }
@@ -5623,14 +5716,18 @@ function resolvePath() {
     addToClearSet(clearSet, spot.row, spot.col);
   }
 
-  /* Loop closed: sweep the whole colour off the board, then set off
-     anything the ring caught in the middle of it. */
+  /* Loop closed: sweep every colour the ring linked off the board, then
+     set off anything the ring caught in the middle of it. A ring with no
+     chromatic in it has one colour; a ring through one may have several. */
   const tripleBombKeys = new Set();
   const stoneShatter = new Map();
   let waveCentre = null;
+  const colours = readPathColours(game.path);
 
-  if (game.loopClosed === true && game.pathColour !== -1) {
-    everyCellOfColour(clearSet, game.pathColour);
+  if (game.loopClosed === true && colours.all.length > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(clearSet, colours.all[i]);
+    }
 
     const summary = loopInteriorSummary(game.path);
     if (loopCaughtSomething(summary) === true) {
@@ -5638,7 +5735,9 @@ function resolvePath() {
     }
   }
 
-  /* A prism caught in the link torches its colour as well. */
+  /* A chromatic caught in the link torches every colour the link held.
+     A prism torches its own, and with no chromatic beside it the link
+     has only the one. */
   let prismInLink = false;
   for (let i = 0; i < game.path.length; i++) {
     const spot = game.path[i];
@@ -5646,7 +5745,13 @@ function resolvePath() {
       prismInLink = true;
     }
   }
-  if (prismInLink === true && game.pathColour !== -1) {
+  if (colours.hasChromatic === true && colours.all.length > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(clearSet, colours.all[i]);
+    }
+    showBurstToast("CHROMATIC BLAST", "#ffffff");
+    playTone(988, 0.5, "sine", 0.15);
+  } else if (prismInLink === true && game.pathColour !== -1) {
     everyCellOfColour(clearSet, game.pathColour);
     showBurstToast("PRISM BLAST", "#ffffff");
     playTone(880, 0.5, "sine", 0.15);
@@ -5677,6 +5782,7 @@ function resolvePath() {
 
   game.path = [];
   game.pathColour = -1;
+  game.pathColours = [];
   game.loopClosed = false;
 
   mode.advanceHazards();
@@ -5695,7 +5801,10 @@ function forgeSpecial(row, col, special) {
   cell.scale = 1.6;
   spawnForgeRing(row, col);
 
-  if (special === "prism") {
+  if (special === "chromatic") {
+    showBurstToast("CHROMATIC FORGED", "#ffffff");
+    playTone(1318, 0.45, "sine", 0.16);
+  } else if (special === "prism") {
     showBurstToast("PRISM FORGED", "#ffffff");
     playTone(1046, 0.4, "sine", 0.16);
   } else {
@@ -5822,8 +5931,7 @@ function applyClear(clearSet, linkLength, bombStoneDamage, waveCentre) {
   }
 
   const centre = cleared[Math.floor(cleared.length / 2)];
-  const colourForText = game.pathColour === -1 ? 4 : game.pathColour;
-  spawnFloater(centre.row, centre.col, "+" + total, GEM_COLOURS[colourForText].rim);
+  spawnFloater(centre.row, centre.col, "+" + total, GEM_COLOURS[pathPaintColour()].rim);
 
   if (multiplier > 1) {
     spawnFloater(centre.row - 1, centre.col, "x" + multiplier, "#ffffff");
@@ -6275,7 +6383,7 @@ function firstLinkOfLength(needed) {
       const used = new Set();
       used.add(keyOf(row, col));
 
-      const startColour = start.special === "prism" ? -1 : start.colour;
+      const startColour = colourAfterStep(-1, start);
       const found = growLinkTo(path, used, startColour, needed);
       if (found !== null) return found;
     }
@@ -6283,9 +6391,21 @@ function firstLinkOfLength(needed) {
   return null;
 }
 
+/* The colour a link is on after stepping onto a cell: the first plain
+   gem fixes it, a prism leaves it alone, and a chromatic closes the
+   segment so the next plain gem opens another. The same rule
+   readPathColours applies to a whole path, one step at a time, for the
+   searches that walk paths they have not drawn. */
+function colourAfterStep(pathColour, cell) {
+  if (cell.special === "chromatic") return -1;
+  if (cell.special === "prism") return pathColour;
+  if (pathColour === -1) return cell.colour;
+  return pathColour;
+}
+
 /* Extends the path one gem at a time until it is long enough, backing out
    of every dead end. The colour so far is passed down the same way
-   walkLink passes it, because the first plain gem fixes it. */
+   walkLink passes it. */
 function growLinkTo(path, used, pathColour, needed) {
   if (path.length >= needed) return path.slice();
 
@@ -6310,10 +6430,7 @@ function growLinkTo(path, used, pathColour, needed) {
       path.push({ row: row, col: col });
       used.add(key);
 
-      let nextColour = pathColour;
-      if (nextColour === -1 && cell.special !== "prism") nextColour = cell.colour;
-
-      const found = growLinkTo(path, used, nextColour, needed);
+      const found = growLinkTo(path, used, colourAfterStep(pathColour, cell), needed);
       if (found !== null) return found;
 
       path.pop();
@@ -6572,7 +6689,9 @@ const HINT_GOAL_WEIGHT = 1400;
 const HINT_FINISHES_LEVEL = 2000;
 const HINT_LOOP_WITH_CATCH = 600;
 const HINT_LOOP_PLAIN = 300;
+const HINT_CHROMATIC_IN_LINK = 450;
 const HINT_PRISM_IN_LINK = 300;
+const HINT_FORGES_CHROMATIC = 320;
 const HINT_FORGES_PRISM = 260;
 const HINT_FORGES_BOMB = 150;
 const HINT_BOMB_IN_LINK = 60;
@@ -6597,10 +6716,12 @@ function scoreLinkMove(move) {
     score += HINT_LOOP_PLAIN;
   }
 
+  if (move.chromaticsInPath > 0) score += HINT_CHROMATIC_IN_LINK;
   if (move.prismsInPath > 0) score += HINT_PRISM_IN_LINK;
 
   /* Only an open link forges. A ring pays out by sweeping the colour
      instead, and leaves nothing behind on the board. */
+  if (move.forges === "chromatic") score += HINT_FORGES_CHROMATIC;
   if (move.forges === "prism") score += HINT_FORGES_PRISM;
   if (move.forges === "bomb") score += HINT_FORGES_BOMB;
 
@@ -6623,6 +6744,7 @@ function scoreLinkMove(move) {
    loop or a forge says so. An ordinary three link gets no caption: the
    trail on the board already says everything there is to say. */
 function linkCaption(move) {
+  if (move.loopCatch === "chromatic") return "LOOP THE CHROMATIC";
   if (move.loopCatch === "prism") return "LOOP THE PRISM";
   if (move.loopCatch === "bomb") return "LOOP THE BOMB";
   if (move.loopCatch === "stone") return "LOOP THE STONE";
@@ -6633,8 +6755,10 @@ function linkCaption(move) {
   }
 
   if (move.bombsDetonated >= 2) return "CHAIN " + move.bombsDetonated + " BOMBS";
+  if (move.chromaticsInPath > 0) return "LINK THE CHROMATIC";
   if (move.prismsInPath > 0) return "LINK THE PRISM";
   if (move.bombsDetonated === 1) return "LINK THE BOMB";
+  if (move.forges === "chromatic") return "LINK " + move.path.length + " TO FORGE A CHROMATIC";
   if (move.forges === "prism") return "LINK " + move.path.length + " TO FORGE A PRISM";
   if (move.forges === "bomb") return "LINK " + move.path.length + " TO FORGE A BOMB";
 
@@ -6649,17 +6773,18 @@ function linkCaption(move) {
    The four interior effects reuse the same helpers resolvePath calls, so
    the biggest plays in the game are read exactly and not guessed at. */
 function describeLinkMove(path, closesLoop) {
-  let colour = -1;
+  const colours = readPathColours(path);
   let prismsInPath = 0;
+  let chromaticsInPath = 0;
   let bombsInPath = 0;
   let blightedInPath = 0;
 
   for (let i = 0; i < path.length; i++) {
     const cell = cellAt(path[i].row, path[i].col);
     if (cell.special === "prism") prismsInPath++;
+    if (cell.special === "chromatic") chromaticsInPath++;
     if (cell.special === "bomb") bombsInPath++;
     if (cell.blighted === true) blightedInPath++;
-    if (colour === -1 && cell.special !== "prism") colour = cell.colour;
   }
 
   /* A link long enough to forge leaves its last gem standing as the
@@ -6685,12 +6810,17 @@ function describeLinkMove(path, closesLoop) {
   const stoneShatter = new Map();
   let loopCatch = "none";
 
-  /* Closing a loop sweeps the colour, then sets off whatever the ring
-     walled in. A trapped bomb blasts three cells in every direction, a
-     trapped stone takes every stone with it, a trapped blight cures the
-     board and a trapped prism clears all of it. */
-  if (closesLoop === true && colour !== -1) {
-    everyCellOfColour(cleared, colour);
+  /* Closing a loop sweeps every colour the ring linked, then sets off
+     whatever the ring walled in. A trapped bomb blasts three cells in
+     every direction, a trapped stone takes every stone with it, a
+     trapped blight cures the board, and a trapped prism or chromatic
+     clears all of it. */
+  let finishesLevel = false;
+
+  if (closesLoop === true && colours.all.length > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(cleared, colours.all[i]);
+    }
 
     const summary = loopInteriorSummary(path);
 
@@ -6702,15 +6832,28 @@ function describeLinkMove(path, closesLoop) {
     if (summary.stones.length > 0) everyStoneOnBoard(stoneShatter);
     if (summary.blighted.length > 0) everyBlightedGem(cleared);
     if (summary.prisms.length > 0) everyGemOnBoard(cleared);
+    if (summary.chromatics.length > 0) {
+      everyGemOnBoard(cleared);
+      finishesLevel = true;
+    }
 
-    if (summary.prisms.length > 0) loopCatch = "prism";
+    if (summary.chromatics.length > 0) loopCatch = "chromatic";
+    else if (summary.prisms.length > 0) loopCatch = "prism";
     else if (summary.bombs.length > 0) loopCatch = "bomb";
     else if (summary.stones.length > 0) loopCatch = "stone";
     else if (summary.blighted.length > 0) loopCatch = "blight";
   }
 
-  /* A prism caught in the link torches its colour as well. */
-  if (prismsInPath > 0 && colour !== -1) everyCellOfColour(cleared, colour);
+  /* A chromatic caught in the link torches every colour the link held.
+     A prism torches its own, and with no chromatic beside it the link
+     has only the one. */
+  if (chromaticsInPath > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(cleared, colours.all[i]);
+    }
+  } else if (prismsInPath > 0 && colours.current !== -1) {
+    everyCellOfColour(cleared, colours.current);
+  }
 
   const blast = hintBlastExpansion(cleared, tripleKeys);
 
@@ -6728,10 +6871,21 @@ function describeLinkMove(path, closesLoop) {
   const clearedCells = [];
   cleared.forEach(function (spot) { clearedCells.push(spot); });
 
-  /* A link made only of prisms never fixes on a colour. It still clears
-     and still scores, and violet is what drawPath paints it, so the
-     hint paints it the same. */
-  const paintColour = colour === -1 ? 4 : colour;
+  /* A link made only of specials never fixes on a colour. It still
+     clears and still scores, and violet is what drawPath paints it, so
+     the hint paints it the same. A link that changed colour is painted
+     in the colour it was on at the end. */
+  let paintColour = 4;
+  if (colours.current !== -1) {
+    paintColour = colours.current;
+  } else if (colours.all.length > 0) {
+    paintColour = colours.all[colours.all.length - 1];
+  }
+
+  /* A trapped chromatic meets the goal outright, whatever the board's
+     clear would have counted toward it. */
+  let goalProgress = predictedGoalProgress(clearedCells, stoneDamage);
+  if (finishesLevel === true) goalProgress = goalRemaining();
 
   const move = {
     kind: "link",
@@ -6741,11 +6895,12 @@ function describeLinkMove(path, closesLoop) {
     loopCatch: loopCatch,
     forges: forges,
     prismsInPath: prismsInPath,
+    chromaticsInPath: chromaticsInPath,
     bombsInPath: bombsInPath,
     blightedInPath: blightedInPath,
     bombsDetonated: blast.bombsDetonated,
     clearedCount: clearedCells.length,
-    goalProgress: predictedGoalProgress(clearedCells, stoneDamage),
+    goalProgress: goalProgress,
     score: 0,
     caption: ""
   };
@@ -6778,10 +6933,10 @@ function ringSpansThreeEachWay(path) {
 }
 
 /* Walks links out from the head under exactly the rules extendPath
-   enforces. It keeps the longest link it reaches and the first closed
-   loop it finds, which is enough: the search runs from every gem on the
-   board, so a region worth linking contributes its own best candidate
-   whichever cell the walk happened to start on. */
+   enforces. It keeps the longest link it reaches and the best scoring
+   closed loop it finds. The best, and never the first: a special that
+   joins any colour can be linked into a small ring before the ring
+   around it is tried, and the ring around it is the one worth showing. */
 function walkLink(path, used, pathColour, budget, found) {
   if (budget.left <= 0) return;
   if (path.length >= HINT_MAX_LINK) return;
@@ -6800,16 +6955,26 @@ function walkLink(path, used, pathColour, budget, found) {
       const cell = cellAt(row, col);
       if (cell.kind !== "gem") continue;
       if (cell.doomed === true) continue;
-      if (cellMatchesPath(cell, pathColour) === false) continue;
+      const matches = cellMatchesPath(cell, pathColour);
+      const isStart = row === start.row && col === start.col;
+      if (matches === false && isStart === false) continue;
 
-      /* Coming back to the gem the link started on closes a ring. */
+      /* Coming back to the gem the link started on closes a ring, under
+         the rules extendPath applies: the ring needs a colour to sweep,
+         and the first gem has to match unless a chromatic in the ring
+         has let the colour change. */
       if (row === start.row && col === start.col) {
-        if (found.loop !== null) continue;
         if (path.length < 4) continue;
-        if (pathColour === -1) continue;
+        const colours = readPathColours(path);
+        if (colours.all.length === 0) continue;
+        if (cellMatchesPath(cell, pathColour) === false && colours.hasChromatic === false) continue;
         if (ringSpansThreeEachWay(path) === false) continue;
         if (loopEnclosesACell(path) === false) continue;
-        found.loop = path.slice();
+
+        const ringMove = describeLinkMove(path.slice(), true);
+        if (found.loopMove === null || ringMove.score > found.loopMove.score) {
+          found.loopMove = ringMove;
+        }
         continue;
       }
 
@@ -6822,9 +6987,7 @@ function walkLink(path, used, pathColour, budget, found) {
       path.push({ row: row, col: col });
       used.add(key);
 
-      /* The first non-prism gem fixes the colour of the whole link. */
-      let nextColour = pathColour;
-      if (nextColour === -1 && cell.special !== "prism") nextColour = cell.colour;
+      const nextColour = colourAfterStep(pathColour, cell);
 
       if (path.length >= activeLinkRules().minLink) {
         if (found.longest === null || path.length > found.longest.length) {
@@ -6841,13 +7004,13 @@ function walkLink(path, used, pathColour, budget, found) {
 }
 
 function searchLinksFrom(startRow, startCol) {
-  const found = { longest: null, loop: null };
+  const found = { longest: null, loopMove: null };
 
   const start = cellAt(startRow, startCol);
   if (start.kind !== "gem") return found;
   if (start.doomed === true) return found;
 
-  const startColour = start.special === "prism" ? -1 : start.colour;
+  const startColour = colourAfterStep(-1, start);
   const path = [{ row: startRow, col: startCol }];
   const used = new Set();
   used.add(keyOf(startRow, startCol));
@@ -6889,7 +7052,7 @@ function findLinkMove() {
     for (let col = 0; col < COLS; col++) {
       const found = searchLinksFrom(row, col);
       if (found.longest !== null) consider(describeLinkMove(found.longest, false));
-      if (found.loop !== null) consider(describeLinkMove(found.loop, true));
+      if (found.loopMove !== null) consider(found.loopMove);
     }
   }
 
@@ -7679,6 +7842,7 @@ function loadGame(payload) {
   game.goal = payload.goal;
   game.path = [];
   game.pathColour = -1;
+  game.pathColours = [];
   game.loopClosed = false;
   game.aiming = "none";
   particles.length = 0;
@@ -9558,6 +9722,9 @@ function drawGemMarks(cell, cx, cy, radius) {
   if (cell.special === "prism") {
     drawPrismMarks(cx, cy, radius);
   }
+  if (cell.special === "chromatic") {
+    drawChromaticMarks(cx, cy, radius, game.time * CHROMATIC_SPIN_RATE);
+  }
   if (cell.blighted === true && cell.blightShow > 0) {
     drawBlight(cx, cy, radius, cell.blightShow);
   }
@@ -9879,6 +10046,40 @@ function drawPrismMarks(cx, cy, radius) {
   ctx.beginPath();
   ctx.arc(cx, cy, radius * 0.22, 0, Math.PI * 2);
   ctx.fillStyle = "#ffffff";
+  ctx.fill();
+}
+
+/* A colour wheel: twelve wedges round the hue circle, a lighter ring of
+   the same twelve inside them, and a white core. It turns more slowly
+   than the prism's dots. The angle is an argument so a still picture of
+   one can be drawn at a fixed turn. */
+const CHROMATIC_SPIN_RATE = 0.9;
+const CHROMATIC_WEDGES = 12;
+
+function drawChromaticMarks(cx, cy, radius, spin) {
+  const wedgeAngle = (Math.PI * 2) / CHROMATIC_WEDGES;
+
+  for (let i = 0; i < CHROMATIC_WEDGES; i++) {
+    const hue = i * (360 / CHROMATIC_WEDGES);
+    const from = spin + i * wedgeAngle;
+    const to = from + wedgeAngle;
+
+    drawWheelWedge(cx, cy, radius * 0.30, radius * 0.64, from, to, "hsl(" + hue + ", 90%, 55%)");
+    drawWheelWedge(cx, cy, radius * 0.16, radius * 0.30, from, to, "hsl(" + hue + ", 90%, 78%)");
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.16, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+}
+
+function drawWheelWedge(cx, cy, innerRadius, outerRadius, from, to, colour) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerRadius, from, to);
+  ctx.arc(cx, cy, innerRadius, to, from, true);
+  ctx.closePath();
+  ctx.fillStyle = colour;
   ctx.fill();
 }
 
@@ -10207,10 +10408,10 @@ function drawCells() {
 
 function drawLoopInteriorGlow() {
   if (game.loopClosed === false) return;
-  if (game.pathColour === -1) return;
+  if (pathHasAColour() === false) return;
 
   const summary = loopInteriorSummary(game.path);
-  const palette = GEM_COLOURS[game.pathColour];
+  const palette = GEM_COLOURS[pathPaintColour()];
   const pulse = 0.5 + Math.sin(game.time * 9) * 0.5;
 
   let alpha = 0.14 + pulse * 0.12;
@@ -10240,7 +10441,7 @@ function drawLoopInteriorGlow() {
    exactly the case worth showing off. */
 function drawLoopCatchMarks() {
   if (game.loopClosed === false) return;
-  if (game.pathColour === -1) return;
+  if (pathHasAColour() === false) return;
 
   const summary = loopInteriorSummary(game.path);
   if (loopCaughtSomething(summary) === false) return;
@@ -10269,6 +10470,11 @@ function drawLoopCatchMarks() {
     haloed.push({ spot: summary.prisms[i], colour: "#ffffff", radius: 0.44 });
   }
   if (summary.prisms.length > 0) lines.push({ text: "WHOLE BOARD", colour: "#ffffff" });
+
+  for (let i = 0; i < summary.chromatics.length; i++) {
+    haloed.push({ spot: summary.chromatics[i], colour: "#ffffff", radius: 0.44 });
+  }
+  if (summary.chromatics.length > 0) lines.push({ text: "LEVEL CLEAR", colour: "#ffffff" });
 
   const spin = game.time * 3;
   const pulse = 1 + Math.sin(game.time * 11) * 0.08;
@@ -10340,42 +10546,85 @@ function drawLoopCatchLegend(summary, lines) {
   }
 }
 
+/* The line is drawn one segment at a time, each in its own colour, so a
+   link that changed colour at a chromatic visibly does. A chromatic
+   belongs to the segment before it and the one after, which is what
+   keeps the line continuous through it. A closed ring is white all the
+   way round, as it always was. */
 function drawPath() {
   if (game.path.length === 0) return;
-
-  const colourIndex = game.pathColour === -1 ? 4 : game.pathColour;
-  const palette = GEM_COLOURS[colourIndex];
 
   ctx.save();
   ctx.lineWidth = layout.cell * 0.16;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.shadowColor = palette.glow;
   ctx.shadowBlur = layout.cell * 0.4;
-  ctx.strokeStyle = game.loopClosed === true ? "#ffffff" : palette.rim;
   ctx.globalAlpha = 0.9;
 
-  ctx.beginPath();
+  let segmentStart = 0;
+  let segmentColour = -1;
+
   for (let i = 0; i < game.path.length; i++) {
+    const cell = cellAt(game.path[i].row, game.path[i].col);
+
+    if (segmentColour === -1 && cell.special === "none") {
+      segmentColour = cell.colour;
+    }
+
+    const closesSegment = cell.special === "chromatic" && i > segmentStart;
+    const isLast = i === game.path.length - 1;
+
+    if (closesSegment === true || isLast === true) {
+      drawPathSegment(segmentStart, i, segmentColour);
+      segmentStart = i;
+      segmentColour = -1;
+    }
+  }
+
+  if (game.loopClosed === true) {
+    const head = game.path[game.path.length - 1];
+    const first = game.path[0];
+    const headCentre = cellCentre(head.row, head.col);
+    const firstCentre = cellCentre(first.row, first.col);
+    ctx.strokeStyle = "#ffffff";
+    ctx.shadowColor = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(headCentre.x, headCentre.y + cellAt(head.row, head.col).offsetY);
+    ctx.lineTo(firstCentre.x, firstCentre.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  drawPathRings();
+  drawPathCounter();
+  drawLoopCatchMarks();
+}
+
+/* One stretch of the line, from one path index to another, in one
+   colour. A segment with no colour fixed yet is painted violet, which is
+   what a link made only of specials has always been painted. */
+function drawPathSegment(fromIndex, toIndex, segmentColour) {
+  const palette = GEM_COLOURS[segmentColour === -1 ? 4 : segmentColour];
+
+  ctx.shadowColor = palette.glow;
+  ctx.strokeStyle = game.loopClosed === true ? "#ffffff" : palette.rim;
+
+  ctx.beginPath();
+  for (let i = fromIndex; i <= toIndex; i++) {
     const spot = game.path[i];
     const centre = cellCentre(spot.row, spot.col);
     const cell = cellAt(spot.row, spot.col);
     const y = centre.y + cell.offsetY;
-    if (i === 0) {
+    if (i === fromIndex) {
       ctx.moveTo(centre.x, y);
     } else {
       ctx.lineTo(centre.x, y);
     }
   }
-
-  if (game.loopClosed === true) {
-    const first = game.path[0];
-    const centre = cellCentre(first.row, first.col);
-    ctx.lineTo(centre.x, centre.y);
-  }
   ctx.stroke();
-  ctx.restore();
+}
 
+function drawPathRings() {
   /* Rings around every linked gem. */
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
@@ -10391,7 +10640,9 @@ function drawPath() {
     ctx.stroke();
   }
   ctx.restore();
+}
 
+function drawPathCounter() {
   /* Link counter floating by the head of the path. */
   if (game.path.length >= 2) {
     const head = game.path[game.path.length - 1];
@@ -10409,8 +10660,6 @@ function drawPath() {
     ctx.fillText(label, centre.x, ty);
     ctx.restore();
   }
-
-  drawLoopCatchMarks();
 }
 
 /* ------------------------------------------------------------------
@@ -11257,13 +11506,44 @@ cardBtnAlt.addEventListener("click", function () {
    top of this, and nothing here may describe a piece that some mode does
    not have. Stones, blight and the third charge item all failed that
    test and moved out. */
-function howToPlayHtml() {
+/* The rules every mode shares, printed from the link rules handed in so
+   the numbers are the ones in play. */
+function howToPlayHtml(linkRules) {
   return "" +
-  "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>3 or more</b> to burst them.</span></div>" +
+  "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>" + linkRules.minLink + " or more</b> to burst them.</span></div>" +
   "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>" +
-  "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>5</b> to forge a <b>Bomb</b>, link <b>7</b> to forge a <b>Prism</b> that torches a whole colour.</span></div>" +
-  "<div class='rule'><span class='pip'>&#9678;</span><span>Loop <b>around</b> something without linking it and it goes off far harder. A bomb blasts <b>three cells</b> in every direction, and a Prism clears the <b>whole board</b>.</span></div>" +
+  forgeRulesHtml(linkRules) +
+  loopAroundRuleHtml(linkRules) +
   "<div class='rule'><span class='pip'>&#9878;</span><span>Bursting fills your <b>charge</b>. The row along the bottom of the screen is what it buys.</span></div>";
+}
+
+/* What a link forges, naming only the specials the rules have on. */
+function forgeRulesHtml(linkRules) {
+  let text = "";
+
+  if (linkRules.bombEnabled === true && linkRules.prismEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>" + linkRules.bombLink + "</b> to forge a <b>Bomb</b>, link <b>" + linkRules.prismLink + "</b> to forge a <b>Prism</b> that torches a whole colour.</span></div>";
+  } else if (linkRules.bombEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>" + linkRules.bombLink + "</b> to forge a <b>Bomb</b>.</span></div>";
+  } else if (linkRules.prismEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>" + linkRules.prismLink + "</b> to forge a <b>Prism</b> that torches a whole colour.</span></div>";
+  }
+
+  if (linkRules.chromaticEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#9788;</span><span>Link <b>" + linkRules.chromaticLink + "</b> to forge a <b>Chromatic</b>. It joins any colour, and the link can change colour on the far side of it. Close a loop through one and every colour you linked is purged.</span></div>";
+  }
+
+  return text;
+}
+
+/* What looping around a special does, naming the chromatic only where
+   the rules can produce one. */
+function loopAroundRuleHtml(linkRules) {
+  let ending = "and a Prism clears the <b>whole board</b>.";
+  if (linkRules.chromaticEnabled === true) {
+    ending = "a Prism clears the <b>whole board</b>, and a Chromatic clears the <b>level</b>.";
+  }
+  return "<div class='rule'><span class='pip'>&#9678;</span><span>Loop <b>around</b> something without linking it and it goes off far harder. A bomb blasts <b>three cells</b> in every direction, " + ending + "</span></div>";
 }
 
 /* Stones and blight, for the modes that have them. */
@@ -11280,7 +11560,7 @@ function retryContinueRuleHtml() {
 }
 
 function classicRulesHtml() {
-  return howToPlayHtml() + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES) + hazardRulesHtml() +
     "<div class='rule'><span class='pip'>&#8679;</span><span><b>+2 Moves</b> is the third thing charge buys, and the one the other modes swap out.</span></div>" +
     retryContinueRuleHtml();
 }
@@ -12063,7 +12343,7 @@ function showHelpScreen(returnTo) {
     helpRules.innerHTML = mode.rulesHtml();
   } else {
     helpSubtitle.textContent = "PRISM PURGE";
-    helpRules.innerHTML = howToPlayHtml();
+    helpRules.innerHTML = howToPlayHtml(STANDARD_LINK_RULES);
   }
 
   helpRules.scrollTop = 0;
