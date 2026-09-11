@@ -1936,9 +1936,30 @@ const HD_GLINT_VISIBLE_FRACTION = 0.2;
    keeps diagonal drags from clipping their neighbours. */
 const HIT_RADIUS = 0.55;
 
+/* The link lengths the game is balanced around. Every mode names a rules
+   object built from these, and a mode that lets the player change them
+   names its own, so nothing at play time reads the bare constants: the
+   number in play is the mode's to say. */
 const MIN_LINK = 3;
 const BOMB_LINK = 5;      // linking this many forges a bomb
 const PRISM_LINK = 7;     // linking this many forges a prism
+
+const STANDARD_LINK_RULES = {
+  minLink: MIN_LINK,
+  bombEnabled: true,
+  bombLink: BOMB_LINK,
+  prismEnabled: true,
+  prismLink: PRISM_LINK
+};
+
+/* What a link of this length leaves standing on its last gem under the
+   rules in play. Checked from the strongest tier down, so the longest
+   link forges the strongest gem, and "none" when it reaches no tier. */
+function forgeKindForLink(length, rules) {
+  if (rules.prismEnabled === true && length >= rules.prismLink) return "prism";
+  if (rules.bombEnabled === true && length >= rules.bombLink) return "bomb";
+  return "none";
+}
 
 /* How long a gem spends bursting before it leaves the board. */
 const BURST_SECONDS = 0.24;
@@ -2040,10 +2061,10 @@ const HINT_LATE_FROM_LEVEL = 26;
 const HINT_DELAY_MIN_SECONDS = 5;
 const HINT_DELAY_MAX_SECONDS = 30;
 
-/* Caps on the search that looks for a move. Depth nine is two past the
-   seven that forges a prism, which is the deepest link with a mechanic
-   attached, and a longer trail than that is hard to follow anyway. The
-   node budget is per starting cell. */
+/* Caps on the search that looks for a move. Nine is two past the seven a
+   standard prism takes, and a longer trail than that is hard to follow
+   anyway. A mode that sets a threshold above it simply never has that
+   forge suggested. The node budget is per starting cell. */
 const HINT_MAX_LINK = 9;
 const HINT_NODE_BUDGET = 500;
 
@@ -4076,6 +4097,7 @@ const GAME_MODES = [
     drawTileMark: drawClassicTileMark,
 
     items: CLASSIC_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
 
     /* Every run opens on a fresh board. This says whether each level
        after the first gets one too. */
@@ -4123,6 +4145,7 @@ const GAME_MODES = [
     drawTileMark: drawTimeAttackTileMark,
 
     items: TIME_ATTACK_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
 
     rebuildsBoardEachLevel: true,
     refillsClearedCells: true,
@@ -4168,6 +4191,7 @@ const GAME_MODES = [
     drawTileMark: drawEndlessTileMark,
 
     items: ENDLESS_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
 
     /* The whole point of the mode. */
     rebuildsBoardEachLevel: false,
@@ -4214,6 +4238,7 @@ const GAME_MODES = [
     drawTileMark: drawEliminationTileMark,
 
     items: ELIMINATION_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
 
     rebuildsBoardEachLevel: true,
 
@@ -4304,13 +4329,20 @@ function activeHazards() {
   return hazards;
 }
 
+/* The link lengths in play: the minimum, and what forges at what length.
+   Four modes name the standard set, and a mode that lets the player
+   change them names its own. */
+function activeLinkRules() {
+  return activeMode().linkRules;
+}
+
 /* Every field above is required of every mode. This is a checklist for
    the entries, not a table anything reads at play time: a mode that
    forgets one says so at load, where it is a typo to fix, instead of at
    level twelve where it is a bug to hunt. */
 const MODE_FIELDS = [
   "id", "name", "blurb", "rulesHtml", "difficulties", "difficultySummary",
-  "hazards", "tileGems", "drawTileMark", "items", "rebuildsBoardEachLevel",
+  "hazards", "tileGems", "drawTileMark", "items", "linkRules", "rebuildsBoardEachLevel",
   "refillsClearedCells", "rerollsDeadBoard", "goalIsMet", "makeGoalForLevel",
   "layOutHazards", "advanceHazards", "startBudget",
   "levelClearBonus", "levelClearSubtitle", "nextLevelWarning", "spendOnLink",
@@ -5559,7 +5591,9 @@ function applyLoopInteriorEffects(summary, clearSet, tripleKeys, stoneShatter) {
 }
 
 function resolvePath() {
-  if (game.path.length < MIN_LINK) {
+  const rules = activeLinkRules();
+
+  if (game.path.length < rules.minLink) {
     game.path = [];
     game.pathColour = -1;
     game.loopClosed = false;
@@ -5569,13 +5603,16 @@ function resolvePath() {
   const linkLength = game.path.length;
   const clearSet = new Map();
 
-  /* The last gem of a long link survives and gets upgraded. */
+  /* The last gem of a long link survives and gets upgraded. A closed
+     loop never forges; it pays out by sweeping the colour instead. */
   let upgradeSpot = null;
   let upgradeKind = "none";
 
-  if (game.loopClosed === false && linkLength >= BOMB_LINK) {
-    upgradeSpot = game.path[linkLength - 1];
-    upgradeKind = linkLength >= PRISM_LINK ? "prism" : "bomb";
+  if (game.loopClosed === false) {
+    upgradeKind = forgeKindForLink(linkLength, rules);
+    if (upgradeKind !== "none") {
+      upgradeSpot = game.path[linkLength - 1];
+    }
   }
 
   for (let i = 0; i < game.path.length; i++) {
@@ -6216,71 +6253,80 @@ function boardIsSettled() {
    Solvability check
    ------------------------------------------------------------------ */
 
-/* Whether a legal link exists anywhere on the board.
+/* The first link of at least the length asked for, or null when the board
+   holds none. Walks out from every gem under exactly the rules extendPath
+   enforces, so a yes is a link the player could draw and a no means the
+   board is dead, at whatever minimum the mode has set.
 
-   Every three gem link has a middle gem touching the other two, so
-   asking the question of each gem in turn as the middle of one answers
-   it for the whole board.
+   This has to be exact rather than nearly right, because a mode where the
+   board drains ends its level on the answer. A yes that is not true leaves
+   the player sitting on a board they cannot play and cannot finish.
 
-   This has to be exact rather than nearly right, because a mode where
-   the board drains ends its level on the answer. A yes that is not true
-   leaves the player sitting on a board they cannot play and cannot
-   finish. */
-function hasAnyLink() {
+   At the standard minimum of three it visits at most a few thousand cells
+   on a full board, and it runs once per settled board. */
+function firstLinkOfLength(needed) {
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      if (couldBeMiddleOfALink(row, col) === true) return true;
+      const start = cellAt(row, col);
+      if (start.kind !== "gem") continue;
+      if (start.doomed === true) continue;
+
+      const path = [{ row: row, col: col }];
+      const used = new Set();
+      used.add(keyOf(row, col));
+
+      const startColour = start.special === "prism" ? -1 : start.colour;
+      const found = growLinkTo(path, used, startColour, needed);
+      if (found !== null) return found;
     }
   }
-  return false;
+  return null;
 }
 
-/* A prism carries no colour of its own and slots into a link of any, so
-   it counts toward every colour a neighbour could fix, and three prisms
-   together are a link that fixes on no colour at all. */
-function couldBeMiddleOfALink(row, col) {
-  const middle = cellAt(row, col);
-  if (middle.kind !== "gem") return false;
+/* Extends the path one gem at a time until it is long enough, backing out
+   of every dead end. The colour so far is passed down the same way
+   walkLink passes it, because the first plain gem fixes it. */
+function growLinkTo(path, used, pathColour, needed) {
+  if (path.length >= needed) return path.slice();
 
-  let prismNeighbours = 0;
-  const neighboursOfColour = [];
-  for (let colour = 0; colour < GEM_COLOURS.length; colour++) {
-    neighboursOfColour.push(0);
-  }
+  const head = path[path.length - 1];
 
   for (let dr = -1; dr <= 1; dr++) {
     for (let dc = -1; dc <= 1; dc++) {
       if (dr === 0 && dc === 0) continue;
 
-      const r = row + dr;
-      const c = col + dc;
-      if (insideBoard(r, c) === false) continue;
+      const row = head.row + dr;
+      const col = head.col + dc;
+      if (insideBoard(row, col) === false) continue;
 
-      const other = cellAt(r, c);
-      if (other.kind !== "gem") continue;
+      const cell = cellAt(row, col);
+      if (cell.kind !== "gem") continue;
+      if (cell.doomed === true) continue;
+      if (cellMatchesPath(cell, pathColour) === false) continue;
 
-      if (other.special === "prism") {
-        prismNeighbours++;
-      } else {
-        neighboursOfColour[other.colour]++;
-      }
+      const key = keyOf(row, col);
+      if (used.has(key) === true) continue;
+
+      path.push({ row: row, col: col });
+      used.add(key);
+
+      let nextColour = pathColour;
+      if (nextColour === -1 && cell.special !== "prism") nextColour = cell.colour;
+
+      const found = growLinkTo(path, used, nextColour, needed);
+      if (found !== null) return found;
+
+      path.pop();
+      used.delete(key);
     }
   }
 
-  /* An ordinary gem fixes the colour of the link, so both the gems
-     either side of it have to be that colour or a prism. */
-  if (middle.special !== "prism") {
-    return neighboursOfColour[middle.colour] + prismNeighbours >= 2;
-  }
+  return null;
+}
 
-  /* A prism in the middle takes the colour from whichever side has one,
-     so the two sides have to agree with each other. */
-  if (prismNeighbours >= 2) return true;
-
-  for (let colour = 0; colour < neighboursOfColour.length; colour++) {
-    if (neighboursOfColour[colour] + prismNeighbours >= 2) return true;
-  }
-  return false;
+/* Whether a legal link exists anywhere on the board. */
+function hasAnyLink() {
+  return firstLinkOfLength(activeLinkRules().minLink) !== null;
 }
 
 function ensureSolvableBoard() {
@@ -6555,13 +6601,8 @@ function scoreLinkMove(move) {
 
   /* Only an open link forges. A ring pays out by sweeping the colour
      instead, and leaves nothing behind on the board. */
-  if (move.closesLoop === false) {
-    if (move.path.length >= PRISM_LINK) {
-      score += HINT_FORGES_PRISM;
-    } else if (move.path.length >= BOMB_LINK) {
-      score += HINT_FORGES_BOMB;
-    }
-  }
+  if (move.forges === "prism") score += HINT_FORGES_PRISM;
+  if (move.forges === "bomb") score += HINT_FORGES_BOMB;
 
   score += move.bombsInPath * HINT_BOMB_IN_LINK;
 
@@ -6594,8 +6635,8 @@ function linkCaption(move) {
   if (move.bombsDetonated >= 2) return "CHAIN " + move.bombsDetonated + " BOMBS";
   if (move.prismsInPath > 0) return "LINK THE PRISM";
   if (move.bombsDetonated === 1) return "LINK THE BOMB";
-  if (move.path.length >= PRISM_LINK) return "LINK " + move.path.length + " TO FORGE A PRISM";
-  if (move.path.length >= BOMB_LINK) return "LINK " + move.path.length + " TO FORGE A BOMB";
+  if (move.forges === "prism") return "LINK " + move.path.length + " TO FORGE A PRISM";
+  if (move.forges === "bomb") return "LINK " + move.path.length + " TO FORGE A BOMB";
 
   return "";
 }
@@ -6621,11 +6662,16 @@ function describeLinkMove(path, closesLoop) {
     if (colour === -1 && cell.special !== "prism") colour = cell.colour;
   }
 
-  /* A link of five or more leaves its last gem standing as a bomb or a
-     prism, so that one is not part of the clear. A closed loop never
-     forges, so it never leaves one behind. */
+  /* A link long enough to forge leaves its last gem standing as the
+     special it forged, so that one is not part of the clear. A closed
+     loop never forges, so it never leaves one behind. */
+  let forges = "none";
+  if (closesLoop === false) {
+    forges = forgeKindForLink(path.length, activeLinkRules());
+  }
+
   let survivorKey = -1;
-  if (closesLoop === false && path.length >= BOMB_LINK) {
+  if (forges !== "none") {
     const last = path[path.length - 1];
     survivorKey = keyOf(last.row, last.col);
   }
@@ -6693,6 +6739,7 @@ function describeLinkMove(path, closesLoop) {
     colour: paintColour,
     closesLoop: closesLoop,
     loopCatch: loopCatch,
+    forges: forges,
     prismsInPath: prismsInPath,
     bombsInPath: bombsInPath,
     blightedInPath: blightedInPath,
@@ -6711,44 +6758,6 @@ function describeLinkMove(path, closesLoop) {
 /* ------------------------------------------------------------------
    Searching for a link
    ------------------------------------------------------------------ */
-
-/* Every ordinary gem with two linkable neighbours has a three link
-   running through it, and this finds one without searching at all.
-   hasAnyLink reads the board the same way to decide it is playable, so
-   running this first means the hint cannot come up empty on a board the
-   game has called playable.
-
-   Prisms are left to the search. One joins any colour, which makes the
-   link it belongs to a choice, and the search is where choices go. */
-function shortLinkThrough(row, col) {
-  const cell = cellAt(row, col);
-  if (cell.kind !== "gem") return null;
-  if (cell.special === "prism") return null;
-  if (cell.doomed === true) return null;
-
-  const matches = [];
-
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      if (dr === 0 && dc === 0) continue;
-
-      const r = row + dr;
-      const c = col + dc;
-      if (insideBoard(r, c) === false) continue;
-
-      const other = cellAt(r, c);
-      if (other.kind !== "gem") continue;
-      if (other.doomed === true) continue;
-      if (other.special !== "prism" && other.colour !== cell.colour) continue;
-
-      matches.push({ row: r, col: c });
-    }
-  }
-
-  if (matches.length < 2) return null;
-
-  return [matches[0], { row: row, col: col }, matches[1]];
-}
 
 /* A ring narrower than three cells either way cannot have walled
    anything in, which saves running the flood on most of them. */
@@ -6817,7 +6826,7 @@ function walkLink(path, used, pathColour, budget, found) {
       let nextColour = pathColour;
       if (nextColour === -1 && cell.special !== "prism") nextColour = cell.colour;
 
-      if (path.length >= MIN_LINK) {
+      if (path.length >= activeLinkRules().minLink) {
         if (found.longest === null || path.length > found.longest.length) {
           found.longest = path.slice();
         }
@@ -6870,11 +6879,14 @@ function findLinkMove() {
     }
   }
 
+  /* hasAnyLink reads the board with this same search to decide it is
+     playable, so taking its answer first means the hint cannot come up
+     empty on a board the game has called playable. */
+  const floor = firstLinkOfLength(activeLinkRules().minLink);
+  if (floor !== null) consider(describeLinkMove(floor, false));
+
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      const floor = shortLinkThrough(row, col);
-      if (floor !== null) consider(describeLinkMove(floor, false));
-
       const found = searchLinksFrom(row, col);
       if (found.longest !== null) consider(describeLinkMove(found.longest, false));
       if (found.loop !== null) consider(describeLinkMove(found.loop, true));
@@ -10388,7 +10400,7 @@ function drawPath() {
     ctx.font = "bold " + Math.round(layout.cell * 0.34) + "px Trebuchet MS, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = game.path.length >= MIN_LINK ? "#ffffff" : "rgba(255,255,255,0.5)";
+    ctx.fillStyle = game.path.length >= activeLinkRules().minLink ? "#ffffff" : "rgba(255,255,255,0.5)";
     ctx.strokeStyle = "rgba(0,0,0,0.7)";
     ctx.lineWidth = 3;
     const label = String(game.path.length);
