@@ -1111,6 +1111,97 @@
     color: #fff;
   }
 
+  /* The Custom setup screen: one row per rule, the name on the left and
+     the control on the right, with a note under the rows that need one.
+     The controls are the pick buttons the difficulty selector already
+     uses, so the screen reads as one family. */
+  .ruleRows {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .ruleRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .ruleRow.stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .ruleLabel {
+    font-size: 14px;
+    letter-spacing: 0.4px;
+    color: var(--ink);
+    flex: 1 1 auto;
+  }
+
+  .ruleControls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+
+  .ruleControls .pickBtn {
+    flex: 0 0 auto;
+    min-width: 58px;
+    padding: 9px 10px;
+  }
+
+  /* Four game types is one too many for one line on a phone, so the row
+     wraps two and two. */
+  .ruleRow.stacked .pickRow { flex-wrap: wrap; }
+  .ruleRow.stacked .pickRow .pickBtn { flex: 1 1 40%; min-width: 0; }
+
+  /* A minus, the number, a plus. The number is wide enough for two
+     digits so the buttons never shift as it changes. */
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stepper .pickBtn {
+    min-width: 38px;
+    padding: 9px 0;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .stepper .pickBtn:disabled {
+    opacity: 0.32;
+    cursor: default;
+  }
+
+  .stepperValue {
+    min-width: 28px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--ink);
+  }
+
+  .ruleControls .pickBtn:disabled {
+    opacity: 0.38;
+    cursor: default;
+  }
+
+  .ruleNote {
+    font-size: 12px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+    margin: -4px 0 0 0;
+  }
+
+  .ruleNote.hidden { display: none; }
+
   /* Two live pictures of the same gems under two different settings. */
   .tourPanels {
     display: flex;
@@ -1547,6 +1638,9 @@
   #app.hdChrome .modeTile .modeBlurb { color: var(--ink-dim); }
   #app.hdChrome .screenSub { color: var(--ink-dim); }
   #app.hdChrome .screenNote { color: var(--ink-dim); }
+  #app.hdChrome .ruleNote { color: var(--ink-dim); }
+  #app.hdChrome .ruleLabel { color: var(--ink); }
+  #app.hdChrome .stepperValue { color: var(--ink); }
   #app.hdChrome .screenBody .rule { color: #ded7f5; }
 
   /* Standard runs four gem colours through the title in one gradient.
@@ -12415,7 +12509,17 @@ function showModeStart(modeId) {
 
   modeStartTitle.textContent = mode.name;
   modeStartSub.textContent = mode.blurb;
-  modeStartRules.innerHTML = mode.rulesHtml();
+
+  /* Custom's body is the rules editor. Every other mode prints its
+     rules. The foot below is the same for all five. */
+  if (modeId === "custom") {
+    modeStartRules.innerHTML = "";
+    modeStartRules.appendChild(customEditor);
+    applyCustomRules(customPicks, "the Custom picks");
+    refreshCustomEditor();
+  } else {
+    modeStartRules.innerHTML = mode.rulesHtml();
+  }
 
   const art = modeTileFor(modeId, MODE_TILE_START_WIDTH);
   art.classList.add("modeStartArt");
@@ -12475,6 +12579,377 @@ function refreshModeStartButtons() {
     ", level " + saved.level;
   modeContinue.classList.remove("hidden");
   modeNewGame.className = "screenBtn";
+}
+
+/* =====================================================================
+   CustomSetup
+   Owns: the rules editor on Custom's start screen, and keeping
+   customPicks, the Custom entry and the summary line in step with it.
+   Stays out of: what the rules mean in play, which GameModes owns, and
+   the rest of the start screen, which Screens owns.
+
+   One row per rule. A change writes the pick, re-applies the picks to the
+   Custom entry so the summary and rules text read them, refreshes every
+   control (a pick can change what another is allowed), and saves settings
+   so the picks are there next session.
+   ===================================================================== */
+
+/* The editor is built once and moved into the start screen's body when
+   Custom is shown. A handle per control, so refreshing reads as a list of
+   what changes rather than a walk of the DOM. */
+const customEditor = document.createElement("div");
+customEditor.className = "ruleRows";
+customEditor.id = "customEditor";
+
+const customControls = {
+  baseButtons: [],
+  baseNote: null,
+  blightToggle: null,
+  blightNote: null,
+  stonesToggle: null,
+  stonesNote: null,
+  loopsToggle: null,
+  loopsNote: null,
+  carryToggle: null,
+  carryNote: null,
+  minLinkStepper: null,
+  bombToggle: null,
+  bombStepper: null,
+  bombNote: null,
+  prismToggle: null,
+  prismStepper: null,
+  prismNote: null,
+  chromaticToggle: null,
+  chromaticStepper: null,
+  chromaticNote: null
+};
+
+/* Called after every change. The picks are the truth; everything on the
+   screen is read back from them. */
+function customPickChanged() {
+  applyCustomRules(customPicks, "the Custom picks");
+  refreshCustomEditor();
+  refreshDifficultyRow();
+  saveSettings();
+}
+
+function makeRuleRow(labelText, stacked) {
+  const row = document.createElement("div");
+  row.className = stacked === true ? "ruleRow stacked" : "ruleRow";
+
+  const label = document.createElement("div");
+  label.className = "ruleLabel";
+  label.textContent = labelText;
+  row.appendChild(label);
+
+  const controls = document.createElement("div");
+  controls.className = stacked === true ? "pickRow" : "ruleControls";
+  row.appendChild(controls);
+
+  customEditor.appendChild(row);
+  return controls;
+}
+
+function makeRuleNote() {
+  const note = document.createElement("p");
+  note.className = "ruleNote";
+  customEditor.appendChild(note);
+  return note;
+}
+
+/* A pick button reading On or Off. */
+function makeToggle(parent, onPress) {
+  const button = document.createElement("button");
+  button.className = "pickBtn";
+  button.addEventListener("click", function () {
+    ensureAudio();
+    onPress();
+  });
+  parent.appendChild(button);
+  return button;
+}
+
+function refreshToggle(button, isOn, isDisabled) {
+  button.textContent = isOn === true ? "On" : "Off";
+  button.disabled = isDisabled === true;
+  if (isOn === true) {
+    button.classList.add("picked");
+  } else {
+    button.classList.remove("picked");
+  }
+}
+
+/* A minus, the number and a plus. The window it may move in is worked
+   out on every refresh, because the tiers either side of it can move. */
+function makeStepper(parent, onChange) {
+  const stepper = document.createElement("div");
+  stepper.className = "stepper";
+
+  const minus = document.createElement("button");
+  minus.className = "pickBtn";
+  minus.textContent = "\u2212";
+  minus.addEventListener("click", function () {
+    ensureAudio();
+    onChange(-1);
+  });
+  stepper.appendChild(minus);
+
+  const value = document.createElement("span");
+  value.className = "stepperValue";
+  stepper.appendChild(value);
+
+  const plus = document.createElement("button");
+  plus.className = "pickBtn";
+  plus.textContent = "+";
+  plus.addEventListener("click", function () {
+    ensureAudio();
+    onChange(1);
+  });
+  stepper.appendChild(plus);
+
+  parent.appendChild(stepper);
+  return { minus: minus, value: value, plus: plus };
+}
+
+function refreshStepper(stepper, current, lowest, highest, isDisabled) {
+  stepper.value.textContent = String(current);
+  stepper.minus.disabled = isDisabled === true || current <= lowest;
+  stepper.plus.disabled = isDisabled === true || current >= highest;
+}
+
+/* The lengths a tier may sit at without breaking the order: above the
+   enabled tier before it (or the minimum link), and below the enabled
+   tier after it (or the ceiling). Empty when there is no room, which
+   the toggle refuses and the note explains. */
+function tierWindow(tierName) {
+  const links = customPicks.links;
+  const order = ["bombLink", "prismLink", "chromaticLink"];
+  const enabledFlag = { bombLink: "bombEnabled", prismLink: "prismEnabled", chromaticLink: "chromaticEnabled" };
+  const index = order.indexOf(tierName);
+
+  let lowest = links.minLink + 1;
+  for (let i = index - 1; i >= 0; i--) {
+    if (links[enabledFlag[order[i]]] === true) {
+      lowest = links[order[i]] + 1;
+      break;
+    }
+  }
+
+  let highest = CUSTOM_THRESHOLD_HIGHEST;
+  for (let i = index + 1; i < order.length; i++) {
+    if (links[enabledFlag[order[i]]] === true) {
+      highest = links[order[i]] - 1;
+      break;
+    }
+  }
+
+  return { lowest: Math.max(lowest, CUSTOM_THRESHOLD_LOWEST), highest: highest };
+}
+
+/* The minimum link may rise as far as one below the first enabled tier. */
+function minLinkWindow() {
+  const links = customPicks.links;
+  let highest = CUSTOM_MIN_LINK_HIGHEST;
+  const tiers = enabledLinkTiers(links);
+  if (tiers.length > 0) {
+    highest = Math.min(highest, tiers[0].length - 1);
+  }
+  return { lowest: CUSTOM_MIN_LINK_LOWEST, highest: highest };
+}
+
+/* Switching a tier on puts it at the nearest length its window allows.
+   With no room at all the switch is refused and the note says why. */
+function toggleTier(enabledField, lengthField) {
+  const links = customPicks.links;
+
+  if (links[enabledField] === true) {
+    links[enabledField] = false;
+    customPickChanged();
+    return;
+  }
+
+  const window = tierWindow(lengthField);
+  if (window.lowest > window.highest) {
+    refreshCustomEditor();
+    return;
+  }
+
+  links[enabledField] = true;
+  links[lengthField] = Math.max(window.lowest, Math.min(links[lengthField], window.highest));
+  customPickChanged();
+}
+
+function stepTier(lengthField, direction) {
+  const links = customPicks.links;
+  const window = tierWindow(lengthField);
+  const next = links[lengthField] + direction;
+  if (next < window.lowest || next > window.highest) return;
+  links[lengthField] = next;
+  customPickChanged();
+}
+
+function stepMinLink(direction) {
+  const window = minLinkWindow();
+  const next = customPicks.links.minLink + direction;
+  if (next < window.lowest || next > window.highest) return;
+  customPicks.links.minLink = next;
+  customPickChanged();
+}
+
+/* Moving onto the Elimination base switches both hazards off, because it
+   cannot play with either. Nothing is switched back on when moving away,
+   so a player who turned blight off keeps it off. */
+function pickBaseMode(baseModeId) {
+  customPicks.baseModeId = baseModeId;
+  if (baseModeId === "elimination") {
+    customPicks.blightEnabled = false;
+    customPicks.stonesEnabled = false;
+  }
+  customPickChanged();
+}
+
+function buildCustomEditor() {
+  const baseRow = makeRuleRow("Game type", true);
+  for (let i = 0; i < CUSTOM_BASE_MODE_IDS.length; i++) {
+    const baseModeId = CUSTOM_BASE_MODE_IDS[i];
+    const button = document.createElement("button");
+    button.className = "pickBtn";
+    button.textContent = modeById(baseModeId).name;
+    button.addEventListener("click", function () {
+      ensureAudio();
+      pickBaseMode(baseModeId);
+    });
+    baseRow.appendChild(button);
+    customControls.baseButtons.push({ id: baseModeId, button: button });
+  }
+  customControls.baseNote = makeRuleNote();
+
+  customControls.blightToggle = makeToggle(makeRuleRow("Blight", false), function () {
+    customPicks.blightEnabled = customPicks.blightEnabled === false;
+    customPickChanged();
+  });
+  customControls.blightNote = makeRuleNote();
+
+  customControls.stonesToggle = makeToggle(makeRuleRow("Stones", false), function () {
+    customPicks.stonesEnabled = customPicks.stonesEnabled === false;
+    customPickChanged();
+  });
+  customControls.stonesNote = makeRuleNote();
+
+  customControls.loopsToggle = makeToggle(makeRuleRow("Loops", false), function () {
+    customPicks.loopsEnabled = customPicks.loopsEnabled === false;
+    customPickChanged();
+  });
+  customControls.loopsNote = makeRuleNote();
+
+  customControls.carryToggle = makeToggle(makeRuleRow("Specials carry over", false), function () {
+    customPicks.specialsCarryOver = customPicks.specialsCarryOver === false;
+    customPickChanged();
+  });
+  customControls.carryNote = makeRuleNote();
+
+  customControls.minLinkStepper = makeStepper(makeRuleRow("Minimum link", false), stepMinLink);
+
+  const bombRow = makeRuleRow("Bomb", false);
+  customControls.bombToggle = makeToggle(bombRow, function () { toggleTier("bombEnabled", "bombLink"); });
+  customControls.bombStepper = makeStepper(bombRow, function (direction) { stepTier("bombLink", direction); });
+  customControls.bombNote = makeRuleNote();
+
+  const prismRow = makeRuleRow("Prism", false);
+  customControls.prismToggle = makeToggle(prismRow, function () { toggleTier("prismEnabled", "prismLink"); });
+  customControls.prismStepper = makeStepper(prismRow, function (direction) { stepTier("prismLink", direction); });
+  customControls.prismNote = makeRuleNote();
+
+  const chromaticRow = makeRuleRow("Chromatic", false);
+  customControls.chromaticToggle = makeToggle(chromaticRow, function () { toggleTier("chromaticEnabled", "chromaticLink"); });
+  customControls.chromaticStepper = makeStepper(chromaticRow, function (direction) { stepTier("chromaticLink", direction); });
+  customControls.chromaticNote = makeRuleNote();
+}
+
+/* Every control, read back from the picks. */
+function refreshCustomEditor() {
+  const picks = customPicks;
+  const links = picks.links;
+  const onElimination = picks.baseModeId === "elimination";
+
+  for (let i = 0; i < customControls.baseButtons.length; i++) {
+    const entry = customControls.baseButtons[i];
+    if (entry.id === picks.baseModeId) {
+      entry.button.classList.add("picked");
+    } else {
+      entry.button.classList.remove("picked");
+    }
+  }
+  customControls.baseNote.textContent = modeById(picks.baseModeId).blurb;
+
+  refreshToggle(customControls.blightToggle, picks.blightEnabled, onElimination);
+  if (onElimination === true) {
+    customControls.blightNote.textContent = "Elimination plays without blight.";
+  } else {
+    customControls.blightNote.textContent = "";
+  }
+
+  refreshToggle(customControls.stonesToggle, picks.stonesEnabled, onElimination);
+  if (onElimination === true) {
+    customControls.stonesNote.textContent = "Elimination plays without stones.";
+  } else if (picks.stonesEnabled === false) {
+    customControls.stonesNote.textContent = "Stone goals are skipped.";
+  } else {
+    customControls.stonesNote.textContent = "";
+  }
+
+  refreshToggle(customControls.loopsToggle, picks.loopsEnabled, false);
+  if (picks.loopsEnabled === false) {
+    customControls.loopsNote.textContent = "Crossing back to the first gem does nothing.";
+  } else {
+    customControls.loopsNote.textContent = "";
+  }
+
+  refreshToggle(customControls.carryToggle, picks.specialsCarryOver, false);
+  if (picks.baseModeId === "endless") {
+    customControls.carryNote.textContent = "The board carries on anyway.";
+  } else {
+    customControls.carryNote.textContent = "Bombs, prisms and chromatics on the board follow you onto the next one.";
+  }
+
+  const minWindow = minLinkWindow();
+  refreshStepper(customControls.minLinkStepper, links.minLink, minWindow.lowest, minWindow.highest, false);
+
+  refreshTierRow(customControls.bombToggle, customControls.bombStepper, customControls.bombNote,
+    "bombEnabled", "bombLink", "a bomb");
+  refreshTierRow(customControls.prismToggle, customControls.prismStepper, customControls.prismNote,
+    "prismEnabled", "prismLink", "a prism");
+  refreshTierRow(customControls.chromaticToggle, customControls.chromaticStepper, customControls.chromaticNote,
+    "chromaticEnabled", "chromaticLink", "a chromatic");
+
+  customControls.baseNote.classList.remove("hidden");
+  const notes = [customControls.blightNote, customControls.stonesNote, customControls.loopsNote,
+    customControls.carryNote, customControls.bombNote, customControls.prismNote, customControls.chromaticNote];
+  for (let i = 0; i < notes.length; i++) {
+    if (notes[i].textContent === "") {
+      notes[i].classList.add("hidden");
+    } else {
+      notes[i].classList.remove("hidden");
+    }
+  }
+}
+
+/* A tier's toggle, its stepper, and a note when the toggle cannot be
+   switched on because the tiers either side leave it no room. */
+function refreshTierRow(toggle, stepper, note, enabledField, lengthField, what) {
+  const links = customPicks.links;
+  const window = tierWindow(lengthField);
+  const isOn = links[enabledField] === true;
+  const noRoom = isOn === false && window.lowest > window.highest;
+
+  refreshToggle(toggle, isOn, noRoom);
+  refreshStepper(stepper, links[lengthField], window.lowest, window.highest, isOn === false);
+
+  if (noRoom === true) {
+    note.textContent = "No room for " + what + " between the tiers either side of it.";
+  } else {
+    note.textContent = "";
+  }
 }
 
 /* =====================================================================
@@ -13578,6 +14053,7 @@ BackgroundHandler.init();
 applyGraphicsMode();
 refreshSettingsPage();
 buildDifficultyRow();
+buildCustomEditor();
 measureHudHeights();
 measureStage();
 showMainMenu();
