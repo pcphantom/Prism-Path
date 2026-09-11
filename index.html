@@ -2176,7 +2176,18 @@ const game = {
   phase: "idle",         // "idle" | "bursting" | "falling" | "shuffling" | "over" | "levelDone"
 
   modeId: "classic",
-  difficulty: "normal",  // the selector that sets this arrives with the difficulty work
+  difficulty: "normal",
+
+  /* The rules a Custom run was begun on, saved with the run and null on
+     every other mode. The setup screen edits customPicks; this is the
+     copy taken when the run starts. */
+  customRules: null,
+
+  /* Bombs, prisms and chromatics counted off a finished board, on a mode
+     that carries them onto the next one. Filled when the level clears
+     and placed when the next level lays out, so it never needs saving:
+     the card in between is modal and nothing writes a save under it. */
+  specialCarry: { bomb: 0, prism: 0, chromatic: 0 },
   path: [],              // list of {row, col} making up the current link
 
   /* A link is a run of colour segments. A chromatic gem closes the
@@ -3188,32 +3199,49 @@ function scatterStones(count, toughness) {
    Level goals
    ------------------------------------------------------------------ */
 
+/* Colour, score, stone, round and round. */
 function makeGoalForLevel(level) {
   const kindIndex = (level - 1) % 3;
 
-  if (kindIndex === 0) {
-    const colour = Math.floor(Math.random() * coloursForLevel(level));
-    const target = 14 + level;
-    return {
-      kind: "colour",
-      colour: colour,
-      target: target,
-      progress: 0,
-      label: "Burst " + target
-    };
-  }
+  if (kindIndex === 0) return makeColourGoal(level);
+  if (kindIndex === 1) return makeScoreGoal(level);
+  return makeStoneGoal(level);
+}
 
-  if (kindIndex === 1) {
-    const target = 600 + level * 550;
-    return {
-      kind: "score",
-      colour: -1,
-      target: target,
-      progress: 0,
-      label: "Score " + target + " points"
-    };
-  }
+/* Colour, score, colour, score, for a board that has no stones to ask
+   for. A stone goal on such a board would be a goal of zero, met on the
+   first link. */
+function makeGoalWithoutStones(level) {
+  const kindIndex = (level - 1) % 2;
 
+  if (kindIndex === 0) return makeColourGoal(level);
+  return makeScoreGoal(level);
+}
+
+function makeColourGoal(level) {
+  const colour = Math.floor(Math.random() * coloursForLevel(level));
+  const target = 14 + level;
+  return {
+    kind: "colour",
+    colour: colour,
+    target: target,
+    progress: 0,
+    label: "Burst " + target
+  };
+}
+
+function makeScoreGoal(level) {
+  const target = 600 + level * 550;
+  return {
+    kind: "score",
+    colour: -1,
+    target: target,
+    progress: 0,
+    label: "Score " + target + " points"
+  };
+}
+
+function makeStoneGoal(level) {
   const target = stoneCountForLevel(level);
   return {
     kind: "stone",
@@ -3427,9 +3455,14 @@ const CLASSIC_DIFFICULTIES = {
 /* One line under the selector saying what the player is picking, so the
    three words are a choice instead of a guess. */
 function classicDifficultySummary(difficultyId) {
+  return classicBudgetPhrase(difficultyId) + " " + hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+}
+
+/* What runs out and how many continues you hold, which is the half of
+   the summary Custom borrows when it plays on this base. */
+function classicBudgetPhrase(difficultyId) {
   const tuning = CLASSIC_DIFFICULTIES[difficultyId];
-  return tuning.movesEarly + " moves to start, " +
-    continuePhrase(tuning.continuesAtStart) + ". " + hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+  return tuning.movesEarly + " moves to start, " + continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* Both of these are said on every mode's start screen that has them, so
@@ -3704,17 +3737,25 @@ const TIME_ATTACK_BUDGET_RESCUE = {
 };
 
 function timeAttackRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES) + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+    timeAttackOwnRulesHtml(CLASSIC_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+function timeAttackOwnRulesHtml(hazards, linkRules) {
+  return "" +
     "<div class='rule'><span class='pip'>&#9201;</span><span>The <b>clock</b> replaces the move budget. It runs while you are looking at the board and stops for menus, for cards, and while gems are bursting.</span></div>" +
     "<div class='rule'><span class='pip'>&#8679;</span><span><b>+Time</b> takes the place of +2 Moves. Every second left when a level clears is worth <b>" + SECONDS_BONUS_EACH + "</b> points.</span></div>" +
     retryContinueRuleHtml();
 }
 
 function timeAttackDifficultySummary(difficultyId) {
+  return timeAttackBudgetPhrase(difficultyId) + " " + hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+}
+
+function timeAttackBudgetPhrase(difficultyId) {
   const tuning = TIME_ATTACK_DIFFICULTIES[difficultyId];
   return clockText(tuning.secondsEarly) + " to start, +" + tuning.secondsPerBoost +
-    "s a boost, " + continuePhrase(tuning.continuesAtStart) + ". " +
-    hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+    "s a boost, " + continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* The same full board Classic shows, under a clock running down. */
@@ -3824,17 +3865,23 @@ function layOutEndlessHazards() {
   scatterStones(game.goal.target, stoneToughnessForLevel(game.level));
 }
 
+/* A board whose blight ceiling is zero cannot be infected at all, which
+   is what a Custom run with blight switched off plays on. The box says
+   so instead of reading 0/0. */
 function blightLimitText() {
+  if (blightLossThreshold() === 0) return "Off";
   return countBlight() + "/" + blightLossThreshold();
 }
 
 /* Backwards from a budget: this box counts something climbing, so it
    goes to alarm as the number gets large. */
 function blightLimitIsCritical() {
+  if (blightLossThreshold() === 0) return false;
   return countBlight() >= blightLossThreshold() - 2;
 }
 
 function blightLimitPressure() {
+  if (blightLossThreshold() === 0) return 0;
   return Math.max(0, Math.min(1, countBlight() / blightLossThreshold()));
 }
 
@@ -3907,20 +3954,32 @@ const ENDLESS_ITEMS = [
 ];
 
 function endlessRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES) + hazardRulesHtml() +
-    "<div class='rule'><span class='pip'>&#8734;</span><span>Nothing runs out. The <b>board is never cleared</b>: meeting a goal raises the level and play carries straight on where it stood.</span></div>" +
-    "<div class='rule'><span class='pip'>&#9760;</span><span>Because nothing sweeps the board, the <b>Blight</b> only ever leaves by being cured. It is the one thing that can end a run.</span></div>" +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+    endlessOwnRulesHtml(ENDLESS_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+/* The blight line is only true where there is blight. */
+function endlessOwnRulesHtml(hazards, linkRules) {
+  let text = "<div class='rule'><span class='pip'>&#8734;</span><span>Nothing runs out. The <b>board is never cleared</b>: meeting a goal raises the level and play carries straight on where it stood.</span></div>";
+  if (hazards.maxBlightOnBoard > 0) {
+    text += "<div class='rule'><span class='pip'>&#9760;</span><span>Because nothing sweeps the board, the <b>Blight</b> only ever leaves by being cured. It is the one thing that can end a run.</span></div>";
+  }
+  return text +
     "<div class='rule'><span class='pip'>&#8853;</span><span><b>Snipe</b> takes the place of +2 Moves. Put the crosshair on any gem and it is gone.</span></div>" +
     "<div class='rule'><span class='pip'>&#10010;</span><span>You start with a stock of <b>continues</b> and earn one every " + CONTINUE_EVERY_LEVELS + " levels. Here a continue <b>cures the whole board</b> instead of replaying anything, and costs the score you made on the level.</span></div>";
 }
 
 function endlessDifficultySummary(difficultyId) {
-  const tuning = ENDLESS_DIFFICULTIES[difficultyId];
   const hazards = ENDLESS_HAZARDS[difficultyId];
 
-  return "Nothing runs out, " + continuePhrase(tuning.continuesAtStart) + ". Blight every " +
+  return endlessBudgetPhrase(difficultyId) + " Blight every " +
     hazards.blightIntervalEarly + " moves from level " + hazards.blightFirstLevel +
     ", and " + hazards.maxBlightOnBoard + " blighted cells ends the run.";
+}
+
+function endlessBudgetPhrase(difficultyId) {
+  const tuning = ENDLESS_DIFFICULTIES[difficultyId];
+  return "Nothing runs out, " + continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* A board mid run, with the crosshair sitting on the gem about to go. */
@@ -3969,6 +4028,10 @@ const ELIMINATION_DIFFICULTIES = {
 /* The practical ceiling is somewhere near 56 of the 63, so a perfect
    clear is a rare thing worth paying for. */
 const PERFECT_CLEAR_BONUS = 5000;
+
+/* The minimum link, as the rules sentence says it. Custom allows two to
+   five. */
+const LINK_COUNT_WORDS = { 2: "Two", 3: "Three", 4: "Four", 5: "Five" };
 
 function eliminationQuotaForLevel(level) {
   const tuning = activeTuning();
@@ -4062,20 +4125,35 @@ const ELIMINATION_ITEMS = [
 ];
 
 function eliminationRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES) +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) +
+    eliminationOwnRulesHtml(ELIMINATION_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+/* The shortest link is whatever the rules say it is, and a minimum of
+   two strands nothing, so the stranding sentence is only true above it. */
+function eliminationOwnRulesHtml(hazards, linkRules) {
+  let perfectClear = "Empty the board completely for a <b>perfect clear</b> worth " + PERFECT_CLEAR_BONUS + ".";
+  if (linkRules.minLink > 2) {
+    perfectClear += " " + LINK_COUNT_WORDS[linkRules.minLink] + " gems is the shortest link there is, so a few always end up stranded.";
+  }
+  return "" +
     "<div class='rule'><span class='pip'>&#9633;</span><span>Nothing falls in to replace what you clear. The board <b>drains</b>, and the gems above slide down into the gaps.</span></div>" +
     "<div class='rule'><span class='pip'>&#9679;</span><span>The level runs until <b>nothing links</b>. Meet the quota by then and it is cleared. Fall short and it is not.</span></div>" +
-    "<div class='rule'><span class='pip'>&#9819;</span><span>Empty the board completely for a <b>perfect clear</b> worth " + PERFECT_CLEAR_BONUS + ". Three gems is the shortest link there is, so a few always end up stranded.</span></div>" +
+    "<div class='rule'><span class='pip'>&#9819;</span><span>" + perfectClear + "</span></div>" +
     "<div class='rule'><span class='pip'>&#8853;</span><span>No blight and no stones here. <b>Snipe</b> takes any single gem, which is what a stranded one is for.</span></div>" +
     retryContinueRuleHtml();
 }
 
 function eliminationDifficultySummary(difficultyId) {
+  return eliminationBudgetPhrase(difficultyId) + " No blight and no stones.";
+}
+
+function eliminationBudgetPhrase(difficultyId) {
   const tuning = ELIMINATION_DIFFICULTIES[difficultyId];
 
   return "Clear " + (tuning.quotaBase + Math.floor(tuning.quotaPerLevel)) +
     " of 63 on the first board, rising to " + tuning.quotaCap + ", with " +
-    continuePhrase(tuning.continuesAtStart) + ". No blight and no stones.";
+    continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* A board part way through draining: the top two rows gone and the
@@ -4091,6 +4169,349 @@ function drawEliminationTileMark(tray) {
   drawTileChip(tray, "0");
 }
 
+/* ---- what Custom answers ---- */
+
+/* Custom is a base mode with overrides. The base gives everything the
+   four modes differ on: what runs out, how a link is paid for, the loss
+   tests, the third HUD box, the item row, the goal maker, whether the
+   board persists and refills, and the continue. The picks then remove
+   blight, remove stones, remove loops, change what a link forges, and
+   carry specials across.
+
+   The rules object below is the whole of what the player chooses. The
+   difficulty is picked on the same selector every other mode has. */
+const CUSTOM_BASE_MODE_IDS = ["classic", "timeattack", "endless", "elimination"];
+
+/* A six link minimum on a five colour board is unplayable, and the exact
+   link search is priced for five. */
+const CUSTOM_MIN_LINK_LOWEST = 2;
+const CUSTOM_MIN_LINK_HIGHEST = 5;
+
+const CUSTOM_THRESHOLD_LOWEST = 2;
+const CUSTOM_THRESHOLD_HIGHEST = 20;
+
+/* The standard game, which is where every pick starts. */
+function defaultCustomRules() {
+  return {
+    baseModeId: "classic",
+    blightEnabled: true,
+    stonesEnabled: true,
+    loopsEnabled: true,
+    specialsCarryOver: false,
+    links: {
+      minLink: MIN_LINK,
+      bombEnabled: true,
+      bombLink: BOMB_LINK,
+      prismEnabled: true,
+      prismLink: PRISM_LINK,
+      chromaticEnabled: true,
+      chromaticLink: CHROMATIC_LINK
+    }
+  };
+}
+
+/* A copy with nothing shared, so the run's rules and the setup screen's
+   picks can never edit each other. */
+function cloneCustomRules(rules) {
+  return {
+    baseModeId: rules.baseModeId,
+    blightEnabled: rules.blightEnabled,
+    stonesEnabled: rules.stonesEnabled,
+    loopsEnabled: rules.loopsEnabled,
+    specialsCarryOver: rules.specialsCarryOver,
+    links: {
+      minLink: rules.links.minLink,
+      bombEnabled: rules.links.bombEnabled,
+      bombLink: rules.links.bombLink,
+      prismEnabled: rules.links.prismEnabled,
+      prismLink: rules.links.prismLink,
+      chromaticEnabled: rules.links.chromaticEnabled,
+      chromaticLink: rules.links.chromaticLink
+    }
+  };
+}
+
+/* What the setup screen edits, and what settings remember between
+   sessions. A run takes a copy when it starts. */
+let customPicks = defaultCustomRules();
+
+/* Every rule a Custom rules object has to carry, and the ranges each one
+   is allowed. A rules object that fails this is a bug wherever it came
+   from, so the failure names the field. */
+function checkCustomRules(rules, where) {
+  if (CUSTOM_BASE_MODE_IDS.indexOf(rules.baseModeId) === -1) {
+    throw new Error("PRISM PURGE: " + where + " names a base mode of " +
+      JSON.stringify(rules.baseModeId) + ", which is not one Custom can play.");
+  }
+
+  checkRuleSwitch(rules.blightEnabled, where, "blightEnabled");
+  checkRuleSwitch(rules.stonesEnabled, where, "stonesEnabled");
+  checkRuleSwitch(rules.loopsEnabled, where, "loopsEnabled");
+  checkRuleSwitch(rules.specialsCarryOver, where, "specialsCarryOver");
+
+  if (rules.baseModeId === "elimination") {
+    if (rules.blightEnabled === true || rules.stonesEnabled === true) {
+      throw new Error("PRISM PURGE: " + where + " has blight or stones on an Elimination base, " +
+        "which plays without either.");
+    }
+  }
+
+  const links = rules.links;
+  checkRuleSwitch(links.bombEnabled, where, "links.bombEnabled");
+  checkRuleSwitch(links.prismEnabled, where, "links.prismEnabled");
+  checkRuleSwitch(links.chromaticEnabled, where, "links.chromaticEnabled");
+  checkRuleNumber(links.minLink, where, "links.minLink", CUSTOM_MIN_LINK_LOWEST, CUSTOM_MIN_LINK_HIGHEST);
+  checkRuleNumber(links.bombLink, where, "links.bombLink", CUSTOM_THRESHOLD_LOWEST, CUSTOM_THRESHOLD_HIGHEST);
+  checkRuleNumber(links.prismLink, where, "links.prismLink", CUSTOM_THRESHOLD_LOWEST, CUSTOM_THRESHOLD_HIGHEST);
+  checkRuleNumber(links.chromaticLink, where, "links.chromaticLink", CUSTOM_THRESHOLD_LOWEST, CUSTOM_THRESHOLD_HIGHEST);
+
+  /* Every enabled threshold, in tier order, has to sit strictly above
+     the enabled one before it, so the longest link always forges the
+     strongest gem. A disabled tier is skipped. */
+  let previousName = "links.minLink";
+  let previous = links.minLink;
+  const tiers = enabledLinkTiers(links);
+  for (let i = 0; i < tiers.length; i++) {
+    if (tiers[i].length <= previous) {
+      throw new Error("PRISM PURGE: " + where + " sets " + tiers[i].name + " to " + tiers[i].length +
+        ", which is not above " + previousName + " at " + previous + ".");
+    }
+    previousName = tiers[i].name;
+    previous = tiers[i].length;
+  }
+}
+
+/* The forge tiers the rules have on, in order, each with the length it
+   needs. The setup screen walks the same list to keep the steppers in
+   order. */
+function enabledLinkTiers(links) {
+  const tiers = [];
+  if (links.bombEnabled === true) tiers.push({ name: "links.bombLink", length: links.bombLink });
+  if (links.prismEnabled === true) tiers.push({ name: "links.prismLink", length: links.prismLink });
+  if (links.chromaticEnabled === true) tiers.push({ name: "links.chromaticLink", length: links.chromaticLink });
+  return tiers;
+}
+
+function checkRuleSwitch(value, where, fieldName) {
+  if (value === true || value === false) return;
+  throw new Error("PRISM PURGE: " + where + " should have " + fieldName + " on or off and has " +
+    JSON.stringify(value) + ".");
+}
+
+function checkRuleNumber(value, where, fieldName, lowest, highest) {
+  const inRange = Number.isInteger(value) === true && value >= lowest && value <= highest;
+  if (inRange === true) return;
+  throw new Error("PRISM PURGE: " + where + " should have " + fieldName + " from " + lowest +
+    " to " + highest + " and has " + JSON.stringify(value) + ".");
+}
+
+/* Blight and stones off are expressed as zeros in the hazard table, the
+   way Elimination's already are. infectRandomCell and spreadBlight refuse
+   at the cap, so a cap of zero is a board that cannot be infected, and
+   blightHasWonLoss already returns null where blight cannot end a level.
+   Every other field is the base's, so blight that is on is the base
+   mode's blight at that difficulty.
+
+   The Elimination base has no hazard numbers to compose from and plays
+   with both off, so its table is used as it stands. */
+function composeCustomHazards(base, rules) {
+  if (rules.baseModeId === "elimination") return base.hazards;
+
+  return {
+    easy: composeCustomHazardBlock(base.hazards.easy, rules),
+    normal: composeCustomHazardBlock(base.hazards.normal, rules),
+    hard: composeCustomHazardBlock(base.hazards.hard, rules)
+  };
+}
+
+function composeCustomHazardBlock(baseBlock, rules) {
+  const block = {
+    maxBlightOnBoard: baseBlock.maxBlightOnBoard,
+    blightEndsLevel: baseBlock.blightEndsLevel,
+    blightCarryCap: baseBlock.blightCarryCap,
+    blightFirstLevel: baseBlock.blightFirstLevel,
+    blightIntervalEarly: baseBlock.blightIntervalEarly,
+    blightIntervalMid: baseBlock.blightIntervalMid,
+    blightIntervalLate: baseBlock.blightIntervalLate,
+    blightSeedsFromLevel: baseBlock.blightSeedsFromLevel,
+    blightSeedsEvery: baseBlock.blightSeedsEvery,
+    blightSeedsCap: baseBlock.blightSeedsCap,
+
+    maxStones: baseBlock.maxStones,
+    stoneToughnessBase: baseBlock.stoneToughnessBase,
+    stoneToughnessEvery: baseBlock.stoneToughnessEvery,
+    stoneToughnessCap: baseBlock.stoneToughnessCap
+  };
+
+  if (rules.blightEnabled === false) {
+    block.maxBlightOnBoard = 0;
+    block.blightEndsLevel = false;
+    block.blightCarryCap = 0;
+    block.blightSeedsCap = 0;
+  }
+  if (rules.stonesEnabled === false) {
+    block.maxStones = 0;
+  }
+  return block;
+}
+
+/* The base mode the run's rules name. */
+function customBaseMode() {
+  return modeById(game.customRules.baseModeId);
+}
+
+/* Two places do not read the hazard table and are gated here by hand:
+   the pair of stones Classic scatters from level four whether or not the
+   cap allows it, and the stone goals in the goal cycle. */
+function makeCustomGoal(level) {
+  const rules = game.customRules;
+  if (rules.baseModeId === "elimination") return makeEliminationGoal(level);
+  if (rules.stonesEnabled === true) return makeGoalForLevel(level);
+  return makeGoalWithoutStones(level);
+}
+
+function layOutCustomHazards() {
+  const rules = game.customRules;
+  if (rules.baseModeId === "elimination") return;
+
+  if (rules.stonesEnabled === true) {
+    const toughness = stoneToughnessForLevel(game.level);
+    if (game.goal.kind === "stone") {
+      scatterStones(game.goal.target, toughness);
+    } else if (rules.baseModeId !== "endless" && game.level >= 4) {
+      scatterStones(2, toughness);
+    }
+  }
+
+  if (rules.blightEnabled === true) {
+    seedBlight();
+  }
+}
+
+/* Fills the Custom entry's play time fields from a rules object, one
+   assignment per field so a reader sees where each answer comes from.
+   Called at boot with the defaults, whenever the setup screen changes a
+   pick, and when a Custom run starts or loads, so the entry always holds
+   the rules that matter right now. */
+function applyCustomRules(rules, where) {
+  checkCustomRules(rules, where);
+  customRulesApplied = rules;
+
+  const base = modeById(rules.baseModeId);
+  const custom = modeById("custom");
+
+  custom.items = base.items;
+  custom.difficulties = base.difficulties;
+  custom.hazards = composeCustomHazards(base, rules);
+  custom.linkRules = rules.links;
+  custom.loopsEnabled = rules.loopsEnabled;
+  custom.carriesSpecials = rules.specialsCarryOver;
+
+  custom.rebuildsBoardEachLevel = base.rebuildsBoardEachLevel;
+  custom.refillsClearedCells = base.refillsClearedCells;
+  custom.rerollsDeadBoard = base.rerollsDeadBoard;
+  custom.showsLevelClearCard = base.showsLevelClearCard;
+
+  custom.goalIsMet = base.goalIsMet;
+  custom.makeGoalForLevel = makeCustomGoal;
+  custom.layOutHazards = layOutCustomHazards;
+  custom.advanceHazards = base.advanceHazards;
+  custom.startBudget = base.startBudget;
+  custom.levelClearBonus = base.levelClearBonus;
+  custom.levelClearSubtitle = base.levelClearSubtitle;
+  custom.nextLevelWarning = base.nextLevelWarning;
+
+  custom.spendOnLink = base.spendOnLink;
+  custom.lossBeforeGoal = base.lossBeforeGoal;
+  custom.lossAfterGoal = base.lossAfterGoal;
+
+  custom.advanceTime = base.advanceTime;
+  custom.budgetRescue = base.budgetRescue;
+  custom.takeContinue = base.takeContinue;
+  custom.continueDescription = base.continueDescription;
+
+  custom.limitLabel = base.limitLabel;
+  custom.limitText = base.limitText;
+  custom.limitIsCritical = base.limitIsCritical;
+  custom.limitPressure = base.limitPressure;
+}
+
+/* The rules text for the entry as it currently stands: the shared rules
+   printed from its link rules, each hazard only where it is on, then the
+   base mode's own lines. */
+function customRulesHtml() {
+  const custom = modeById("custom");
+  const base = modeById(customRulesApplied.baseModeId);
+  const hazards = custom.hazards.normal;
+
+  let text = howToPlayHtml(custom.linkRules, custom.loopsEnabled);
+  if (hazards.maxStones > 0) text += stoneRuleHtml(custom.loopsEnabled);
+  if (hazards.maxBlightOnBoard > 0) text += blightRuleHtml(custom.loopsEnabled);
+  text += base.ownRulesHtml(hazards, custom.linkRules);
+  return text;
+}
+
+/* The rules object the entry was last filled from. The setup screen
+   fills it from the picks and a run fills it from its own copy, so this
+   is whichever of the two is standing. */
+let customRulesApplied = null;
+
+function customDifficultySummary(difficultyId) {
+  const rules = customRulesApplied;
+  const base = modeById(rules.baseModeId);
+  const links = rules.links;
+
+  let text = base.name + " on " + difficultyName(difficultyId) + ": " +
+    base.budgetPhrase(difficultyId) + " ";
+
+  /* The Elimination base has no hazards to switch, so its sentence
+     starts at the loops. */
+  const switches = [];
+  if (rules.baseModeId !== "elimination") {
+    switches.push(rules.blightEnabled === true ? "blight on" : "blight off");
+    switches.push(rules.stonesEnabled === true ? "stones on" : "stones off");
+  }
+  switches.push(rules.loopsEnabled === true ? "loops on" : "loops off");
+  const switchesText = switches.join(", ") + ". ";
+  text += switchesText.charAt(0).toUpperCase() + switchesText.slice(1);
+
+  text += "Links of " + links.minLink;
+  text += ", bomb " + (links.bombEnabled === true ? "at " + links.bombLink : "off");
+  text += ", prism " + (links.prismEnabled === true ? "at " + links.prismLink : "off");
+  text += ", chromatic " + (links.chromaticEnabled === true ? "at " + links.chromaticLink : "off") + ".";
+
+  if (rules.specialsCarryOver === true) text += " Specials carry over.";
+  return text;
+}
+
+/* Custom is never the base of another mode, so it has no lines of its
+   own to lend one and no budget phrase to borrow. */
+function noOwnRulesHtml(hazards, linkRules) {
+  return "";
+}
+
+function noBudgetPhrase(difficultyId) {
+  return "";
+}
+
+/* Every colour, in a sweep across the rows, with the wheel over the
+   middle. */
+const CUSTOM_TILE_GEMS = [
+  [0, 0, 1, 1, 4],
+  [1, 1, 2, 2, 0],
+  [2, 2, 3, 3, 1],
+  [3, 3, 4, 4, 2]
+];
+
+const CUSTOM_TILE_WHEEL_ROW = 1;
+const CUSTOM_TILE_WHEEL_COL = 2;
+
+function drawCustomTileMark(tray) {
+  const centreX = tray.originX + CUSTOM_TILE_WHEEL_COL * tray.cell + tray.cell / 2;
+  const centreY = tray.originY + CUSTOM_TILE_WHEEL_ROW * tray.cell + tray.cell / 2;
+  drawChromaticMarks(centreX, centreY, tray.cell * 0.38, 0);
+}
+
 /* ---- the registry ---- */
 
 const GAME_MODES = [
@@ -4101,9 +4522,11 @@ const GAME_MODES = [
     blurb: "Clear each level's goal before the moves run out. Stones and " +
            "blight get in the way, and continues get you out of trouble.",
     rulesHtml: classicRulesHtml,
+    ownRulesHtml: classicOwnRulesHtml,
 
     difficulties: CLASSIC_DIFFICULTIES,
     difficultySummary: classicDifficultySummary,
+    budgetPhrase: classicBudgetPhrase,
     hazards: CLASSIC_HAZARDS,
 
     tileGems: CLASSIC_TILE_GEMS,
@@ -4111,6 +4534,8 @@ const GAME_MODES = [
 
     items: CLASSIC_ITEMS,
     linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
     /* Every run opens on a fresh board. This says whether each level
        after the first gets one too. */
@@ -4150,9 +4575,11 @@ const GAME_MODES = [
     blurb: "The same goals as Classic, against a countdown. The clock runs " +
            "while you think, and charge buys more of it.",
     rulesHtml: timeAttackRulesHtml,
+    ownRulesHtml: timeAttackOwnRulesHtml,
 
     difficulties: TIME_ATTACK_DIFFICULTIES,
     difficultySummary: timeAttackDifficultySummary,
+    budgetPhrase: timeAttackBudgetPhrase,
     hazards: CLASSIC_HAZARDS,
 
     tileGems: TIME_ATTACK_TILE_GEMS,
@@ -4160,6 +4587,8 @@ const GAME_MODES = [
 
     items: TIME_ATTACK_ITEMS,
     linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
     rebuildsBoardEachLevel: true,
     refillsClearedCells: true,
@@ -4197,9 +4626,11 @@ const GAME_MODES = [
     blurb: "One board, carried the whole way. Nothing runs out, the level " +
            "just climbs, and only the blight can stop you.",
     rulesHtml: endlessRulesHtml,
+    ownRulesHtml: endlessOwnRulesHtml,
 
     difficulties: ENDLESS_DIFFICULTIES,
     difficultySummary: endlessDifficultySummary,
+    budgetPhrase: endlessBudgetPhrase,
     hazards: ENDLESS_HAZARDS,
 
     tileGems: ENDLESS_TILE_GEMS,
@@ -4207,6 +4638,8 @@ const GAME_MODES = [
 
     items: ENDLESS_ITEMS,
     linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
     /* The whole point of the mode. The level rises and play carries
        straight on, with nothing put in front of the board. */
@@ -4246,9 +4679,11 @@ const GAME_MODES = [
     blurb: "Nothing falls in to replace what you clear. The board drains, " +
            "and the level lasts until nothing links.",
     rulesHtml: eliminationRulesHtml,
+    ownRulesHtml: eliminationOwnRulesHtml,
 
     difficulties: ELIMINATION_DIFFICULTIES,
     difficultySummary: eliminationDifficultySummary,
+    budgetPhrase: eliminationBudgetPhrase,
     hazards: ELIMINATION_HAZARDS,
 
     tileGems: ELIMINATION_TILE_GEMS,
@@ -4256,6 +4691,8 @@ const GAME_MODES = [
 
     items: ELIMINATION_ITEMS,
     linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
     rebuildsBoardEachLevel: true,
 
@@ -4288,6 +4725,24 @@ const GAME_MODES = [
     limitText: gemsLeftText,
     limitIsCritical: gemsLeftIsCritical,
     limitPressure: gemsLeftPressure
+  },
+
+  /* Custom's identity is its own. Every play time field is filled in by
+     applyCustomRules from the rules in play, which runs on the defaults
+     before the registry is checked, so the entry is complete by then. */
+  {
+    id: "custom",
+    name: "Custom",
+    defaultBackground: "loop",
+    blurb: "Your rules. Pick a game type, then switch every rule on or " +
+           "off, from the blight to what a link forges.",
+    rulesHtml: customRulesHtml,
+    ownRulesHtml: noOwnRulesHtml,
+    difficultySummary: customDifficultySummary,
+    budgetPhrase: noBudgetPhrase,
+
+    tileGems: CUSTOM_TILE_GEMS,
+    drawTileMark: drawCustomTileMark
   }
 ];
 
@@ -4359,8 +4814,9 @@ function activeLinkRules() {
    forgets one says so at load, where it is a typo to fix, instead of at
    level twelve where it is a bug to hunt. */
 const MODE_FIELDS = [
-  "id", "name", "blurb", "rulesHtml", "difficulties", "difficultySummary",
-  "hazards", "tileGems", "drawTileMark", "items", "linkRules", "rebuildsBoardEachLevel",
+  "id", "name", "blurb", "rulesHtml", "ownRulesHtml", "difficulties", "difficultySummary", "budgetPhrase",
+  "hazards", "tileGems", "drawTileMark", "items", "linkRules", "loopsEnabled", "carriesSpecials",
+  "rebuildsBoardEachLevel",
   "refillsClearedCells", "rerollsDeadBoard", "showsLevelClearCard", "goalIsMet", "makeGoalForLevel",
   "layOutHazards", "advanceHazards", "startBudget",
   "levelClearBonus", "levelClearSubtitle", "nextLevelWarning", "spendOnLink",
@@ -4425,6 +4881,7 @@ function checkModeEntries() {
   }
 }
 
+applyCustomRules(customPicks, "the default Custom rules");
 checkModeEntries();
 
 /* =====================================================================
@@ -4704,6 +5161,17 @@ const BackgroundHandler = (function () {
 function startRun(modeId, difficulty) {
   game.modeId = modeId;
   game.difficulty = difficulty;
+
+  /* A Custom run plays the picks as they stood when it began, on its own
+     copy, so the setup screen can be changed underneath it. */
+  if (modeId === "custom") {
+    game.customRules = cloneCustomRules(customPicks);
+    applyCustomRules(game.customRules, "the rules this Custom run was begun on");
+  } else {
+    game.customRules = null;
+  }
+  game.specialCarry = { bomb: 0, prism: 0, chromatic: 0 };
+
   game.bestScore = loadBest(modeId, difficulty);
 
   /* The row belongs to the mode, so it is built once the mode is known
@@ -4754,6 +5222,7 @@ function startLevel(rebuildBoard) {
 
   if (rebuildBoard === true) {
     buildBoard();
+    placeCarriedSpecials();
   }
 
   /* Always, because a mode that keeps its board still gets a new goal
@@ -4768,6 +5237,51 @@ function startLevel(rebuildBoard) {
   setMusicForLevel(game.level);
   refreshHud();
   saveGame();
+}
+
+/* The bombs, prisms and chromatics standing when the last level cleared,
+   on a mode that carries them. Uncapped, because they were earned. */
+function countSpecials() {
+  const counts = { bomb: 0, prism: 0, chromatic: 0 };
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind !== "gem") continue;
+      if (cell.special === "bomb") counts.bomb++;
+      if (cell.special === "prism") counts.prism++;
+      if (cell.special === "chromatic") counts.chromatic++;
+    }
+  }
+
+  return counts;
+}
+
+/* Puts the carried specials onto a fresh board, each on a random plain
+   gem, and empties the count so nothing is placed twice. */
+function placeCarriedSpecials() {
+  placeSpecialsOfKind("bomb", game.specialCarry.bomb);
+  placeSpecialsOfKind("prism", game.specialCarry.prism);
+  placeSpecialsOfKind("chromatic", game.specialCarry.chromatic);
+  game.specialCarry = { bomb: 0, prism: 0, chromatic: 0 };
+}
+
+function placeSpecialsOfKind(special, count) {
+  for (let placed = 0; placed < count; placed++) {
+    const plainGems = [];
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        const cell = cellAt(row, col);
+        if (cell.kind === "gem" && cell.special === "none") {
+          plainGems.push(cell);
+        }
+      }
+    }
+    if (plainGems.length === 0) return;
+
+    const pick = plainGems[Math.floor(Math.random() * plainGems.length)];
+    pick.special = special;
+  }
 }
 
 /* The blight you failed to clear last level follows you into this one.
@@ -5436,6 +5950,8 @@ function extendPath(row, col) {
      colour on the far side of it, and it is still one continuous link
      back to where it began. */
   if (existingIndex === 0) {
+    if (activeMode().loopsEnabled === false) return;
+
     const colours = readPathColours(game.path);
     const firstMatches = cellMatchesPath(cell, game.pathColour) === true || colours.hasChromatic === true;
 
@@ -6969,6 +7485,7 @@ function walkLink(path, used, pathColour, budget, found) {
          and the first gem has to match unless a chromatic in the ring
          has let the colour change. */
       if (row === start.row && col === start.col) {
+        if (activeMode().loopsEnabled === false) continue;
         if (path.length < 4) continue;
         const colours = readPathColours(path);
         if (colours.all.length === 0) continue;
@@ -7409,11 +7926,15 @@ function goalReached() {
    top is a promise about its own budget, and only a mode with a budget
    can make one. */
 function hazardWarning(level) {
-  if (level === 3) return "The Blight starts creeping in from here.";
-  if (level === 4) return "Stones and blight together now.";
-  if (level === 6) return "The Blight spreads faster.";
-  if (level === 10) return "The Blight spreads every other move.";
-  if (level % 12 === 0) return "Stones are tougher from here.";
+  const hazards = activeHazards();
+  const hasBlight = hazards.maxBlightOnBoard > 0;
+  const hasStones = hazards.maxStones > 0;
+
+  if (level === 3 && hasBlight === true) return "The Blight starts creeping in from here.";
+  if (level === 4 && hasBlight === true && hasStones === true) return "Stones and blight together now.";
+  if (level === 6 && hasBlight === true) return "The Blight spreads faster.";
+  if (level === 10 && hasBlight === true) return "The Blight spreads every other move.";
+  if (level % 12 === 0 && hasStones === true) return "Stones are tougher from here.";
   return null;
 }
 
@@ -7479,6 +8000,14 @@ function completeLevel() {
   }
 
   game.blightCarry = countBlight();
+
+  /* Only where a fresh board is coming and the mode says the specials
+     on this one go with it. A mode that keeps its board carries
+     everything anyway. */
+  if (mode.rebuildsBoardEachLevel === true && mode.carriesSpecials === true) {
+    game.specialCarry = countSpecials();
+  }
+
   playFanfare();
 
   /* A mode that shows no card goes straight on to the next level. The
@@ -7512,6 +8041,10 @@ function completeLevel() {
      carries on, the subtitle has already said so. */
   if (mode.rebuildsBoardEachLevel === true && game.blightCarry > 0) {
     body += "<div class='rule'><span class='pip'>&#9760;</span><span><b>" + game.blightCarry + "</b> blight follows you to the next level.</span></div>";
+  }
+  const carriedSpecials = game.specialCarry.bomb + game.specialCarry.prism + game.specialCarry.chromatic;
+  if (carriedSpecials > 0) {
+    body += "<div class='rule'><span class='pip'>&#9788;</span><span><b>" + carriedSpecials + "</b> special" + (carriedSpecials === 1 ? "" : "s") + " follow" + (carriedSpecials === 1 ? "s" : "") + " you to the next level.</span></div>";
   }
   body += "<div class='rule'><span class='pip'>&#9888;</span><span>" + mode.nextLevelWarning(game.level + 1) + "</span></div>";
 
@@ -7793,12 +8326,13 @@ function saveGame() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 5,
+    version: 6,
     randomBackgroundId: BackgroundHandler.randomId(),
     rows: ROWS,
     cols: COLS,
     mode: game.modeId,
     difficulty: game.difficulty,
+    customRules: game.customRules,
     level: game.level,
     score: game.score,
     scoreAtLevelStart: game.scoreAtLevelStart,
@@ -7826,7 +8360,7 @@ function readSaveFor(modeId, difficulty) {
      the same way a save from a differently shaped board is. Said out
      loud, because a run vanishing off the mode select screen with no
      explanation is the worst way to meet it. */
-  if (payload.version !== 4 && payload.version !== 5) {
+  if (payload.version !== 4 && payload.version !== 5 && payload.version !== 6) {
     console.error("PRISM PURGE found a saved " + modeId + " game on " + difficulty +
       " at version " + payload.version + ", which this build cannot read. It has been " +
       "left alone and the mode will offer a new game.");
@@ -7843,12 +8377,31 @@ function readSaveFor(modeId, difficulty) {
     payload.randomBackgroundId = null;
   }
 
+  /* Version 5 predates Custom, so no version 5 run can be one, and the
+     rules it carries are none. */
+  if (payload.version === 5) {
+    payload.version = 6;
+    payload.customRules = null;
+  }
+
+  /* A Custom run is nothing without the rules it was begun on. */
+  if (payload.mode === "custom" && (payload.customRules === null || typeof payload.customRules !== "object")) {
+    console.error("PRISM PURGE found a saved Custom game on " + difficulty +
+      " with no rules on it. It has been left alone and the mode will offer a new game.");
+    return null;
+  }
+
   return payload;
 }
 
 function loadGame(payload) {
   game.modeId = payload.mode;
   game.difficulty = payload.difficulty;
+  game.customRules = payload.customRules;
+  if (game.modeId === "custom") {
+    applyCustomRules(game.customRules, "the rules the saved Custom run was begun on");
+  }
+  game.specialCarry = { bomb: 0, prism: 0, chromatic: 0 };
   game.bestScore = loadBest(payload.mode, payload.difficulty);
   buildItemBar();
   game.level = payload.level;
@@ -7930,8 +8483,9 @@ function saveSettings() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 6,
+    version: 7,
     backgrounds: BackgroundHandler.preferences(),
+    customPicks: customPicks,
     sfxEnabled: sound.enabled,
     sfxVolume: sound.volume,
     musicEnabled: music.enabled,
@@ -7973,6 +8527,10 @@ function saveSettings() {
    Version 5 predates per-mode backgrounds. Earlier supported payloads
    keep the catalog's explicit Mode Default preferences for every mode.
 
+   Version 6 predates Custom, so its backgrounds carry no choice for it
+   and there are no picks to read: the fifth mode is on its default
+   background and the picks are the standard game.
+
    A payload under a version this build does not know is treated as
    absent, the same way an old save is. A payload under a version it
    does know is expected to hold the right shape, and is not quietly
@@ -7985,7 +8543,8 @@ function loadSettings() {
 
   const payload = JSON.parse(raw);
   if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 &&
-      payload.version !== 4 && payload.version !== 5 && payload.version !== 6) return;
+      payload.version !== 4 && payload.version !== 5 && payload.version !== 6 &&
+      payload.version !== 7) return;
 
   settingsWereStored = true;
 
@@ -8012,7 +8571,29 @@ function loadSettings() {
 
   tour.done = storedSwitch(payload.tourDone, "tourDone");
   if (payload.version === 5) return;
+
+  if (payload.version === 6) {
+    payload.backgrounds.custom = "default";
+  }
   BackgroundHandler.restorePreferences(payload.backgrounds);
+  if (payload.version === 6) return;
+
+  customPicks = storedCustomPicks(payload.customPicks, "customPicks");
+}
+
+/* A stored rules object is checked the way a run's is, field by field,
+   and copied so the stored object is never the one being edited. */
+function storedCustomPicks(value, fieldName) {
+  const isObject = value !== null && typeof value === "object";
+  const hasLinks = isObject === true && value.links !== null && typeof value.links === "object";
+
+  if (hasLinks === false) {
+    throw new Error("PRISM PURGE: stored setting '" + fieldName +
+      "' should be a Custom rules object and is " + JSON.stringify(value) + ".");
+  }
+
+  checkCustomRules(value, "stored setting '" + fieldName + "'");
+  return cloneCustomRules(value);
 }
 
 function storedGraphicsMode(value, fieldName) {
@@ -11527,18 +12108,25 @@ cardBtnAlt.addEventListener("click", function () {
    not have. Stones, blight and the third charge item all failed that
    test and moved out. */
 /* The rules every mode shares, printed from the link rules handed in so
-   the numbers are the ones in play. */
-function howToPlayHtml(linkRules) {
-  return "" +
-  "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>" + linkRules.minLink + " or more</b> to burst them.</span></div>" +
-  "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>" +
-  forgeRulesHtml(linkRules) +
-  loopAroundRuleHtml(linkRules) +
+   the numbers are the ones in play. The two loop lines are printed only
+   where loops are on, which for every fixed mode is always. */
+function howToPlayHtml(linkRules, loopsEnabled) {
+  let text = "";
+  text += "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>" + linkRules.minLink + " or more</b> to burst them.</span></div>";
+  if (loopsEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>";
+  }
+  text += forgeRulesHtml(linkRules, loopsEnabled);
+  if (loopsEnabled === true) {
+    text += loopAroundRuleHtml(linkRules);
+  }
+  return text +
   "<div class='rule'><span class='pip'>&#9878;</span><span>Bursting fills your <b>charge</b>. The row along the bottom of the screen is what it buys.</span></div>";
 }
 
-/* What a link forges, naming only the specials the rules have on. */
-function forgeRulesHtml(linkRules) {
+/* What a link forges, naming only the specials the rules have on, and
+   what a loop does with a chromatic only where loops are on. */
+function forgeRulesHtml(linkRules, loopsEnabled) {
   let text = "";
 
   if (linkRules.bombEnabled === true && linkRules.prismEnabled === true) {
@@ -11550,7 +12138,11 @@ function forgeRulesHtml(linkRules) {
   }
 
   if (linkRules.chromaticEnabled === true) {
-    text += "<div class='rule'><span class='pip'>&#9788;</span><span>Link <b>" + linkRules.chromaticLink + "</b> to forge a <b>Chromatic</b>. It joins any colour, and the link can change colour on the far side of it. Close a loop through one and every colour you linked is purged.</span></div>";
+    let chromaticLine = "Link <b>" + linkRules.chromaticLink + "</b> to forge a <b>Chromatic</b>. It joins any colour, and the link can change colour on the far side of it.";
+    if (loopsEnabled === true) {
+      chromaticLine += " Close a loop through one and every colour you linked is purged.";
+    }
+    text += "<div class='rule'><span class='pip'>&#9788;</span><span>" + chromaticLine + "</span></div>";
   }
 
   return text;
@@ -11566,11 +12158,27 @@ function loopAroundRuleHtml(linkRules) {
   return "<div class='rule'><span class='pip'>&#9678;</span><span>Loop <b>around</b> something without linking it and it goes off far harder. A bomb blasts <b>three cells</b> in every direction, " + ending + "</span></div>";
 }
 
-/* Stones and blight, for the modes that have them. */
+/* Stones and blight, for the modes that have them. Custom prints each
+   on its own, only where it is on, and leaves out what a loop does to
+   them where loops are off. */
 function hazardRulesHtml() {
-  return "" +
-  "<div class='rule'><span class='pip'>&#9632;</span><span><b>Stones</b> crack when a gem bursts beside them and take a full hit from any bomb blast. Loop around one and every stone on the board goes with it.</span></div>" +
-  "<div class='rule'><span class='pip'>&#9760;</span><span>The <b>Blight</b> creeps in from the early levels and follows you between them. Link a blighted gem to <b>cure</b> it, or loop around one to cure the whole board. Let it take the board and the level is over.</span></div>";
+  return stoneRuleHtml(true) + blightRuleHtml(true);
+}
+
+function stoneRuleHtml(loopsEnabled) {
+  let line = "<b>Stones</b> crack when a gem bursts beside them and take a full hit from any bomb blast.";
+  if (loopsEnabled === true) {
+    line += " Loop around one and every stone on the board goes with it.";
+  }
+  return "<div class='rule'><span class='pip'>&#9632;</span><span>" + line + "</span></div>";
+}
+
+function blightRuleHtml(loopsEnabled) {
+  let cure = "Link a blighted gem to <b>cure</b> it.";
+  if (loopsEnabled === true) {
+    cure = "Link a blighted gem to <b>cure</b> it, or loop around one to cure the whole board.";
+  }
+  return "<div class='rule'><span class='pip'>&#9760;</span><span>The <b>Blight</b> creeps in from the early levels and follows you between them. " + cure + " Let it take the board and the level is over.</span></div>";
 }
 
 /* The continue every mode has except the one where replaying a level
@@ -11580,7 +12188,16 @@ function retryContinueRuleHtml() {
 }
 
 function classicRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES) + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+    classicOwnRulesHtml(CLASSIC_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+/* The lines that are Classic's alone, which Custom prints under the
+   shared rules when it plays on the Classic base. Every mode's own lines
+   take the hazards and link rules in play, because a line that names a
+   hazard or a link length has to be true under Custom too. */
+function classicOwnRulesHtml(hazards, linkRules) {
+  return "" +
     "<div class='rule'><span class='pip'>&#8679;</span><span><b>+2 Moves</b> is the third thing charge buys, and the one the other modes swap out.</span></div>" +
     retryContinueRuleHtml();
 }
@@ -12363,7 +12980,7 @@ function showHelpScreen(returnTo) {
     helpRules.innerHTML = mode.rulesHtml();
   } else {
     helpSubtitle.textContent = "PRISM PURGE";
-    helpRules.innerHTML = howToPlayHtml(STANDARD_LINK_RULES);
+    helpRules.innerHTML = howToPlayHtml(STANDARD_LINK_RULES, true);
   }
 
   helpRules.scrollTop = 0;
