@@ -1111,6 +1111,97 @@
     color: #fff;
   }
 
+  /* The Custom setup screen: one row per rule, the name on the left and
+     the control on the right, with a note under the rows that need one.
+     The controls are the pick buttons the difficulty selector already
+     uses, so the screen reads as one family. */
+  .ruleRows {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    text-align: left;
+  }
+
+  .ruleRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .ruleRow.stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .ruleLabel {
+    font-size: 14px;
+    letter-spacing: 0.4px;
+    color: var(--ink);
+    flex: 1 1 auto;
+  }
+
+  .ruleControls {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: 0 0 auto;
+  }
+
+  .ruleControls .pickBtn {
+    flex: 0 0 auto;
+    min-width: 58px;
+    padding: 9px 10px;
+  }
+
+  /* Four game types is one too many for one line on a phone, so the row
+     wraps two and two. */
+  .ruleRow.stacked .pickRow { flex-wrap: wrap; }
+  .ruleRow.stacked .pickRow .pickBtn { flex: 1 1 40%; min-width: 0; }
+
+  /* A minus, the number, a plus. The number is wide enough for two
+     digits so the buttons never shift as it changes. */
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .stepper .pickBtn {
+    min-width: 38px;
+    padding: 9px 0;
+    font-size: 16px;
+    line-height: 1;
+  }
+
+  .stepper .pickBtn:disabled {
+    opacity: 0.32;
+    cursor: default;
+  }
+
+  .stepperValue {
+    min-width: 28px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: bold;
+    color: var(--ink);
+  }
+
+  .ruleControls .pickBtn:disabled {
+    opacity: 0.38;
+    cursor: default;
+  }
+
+  .ruleNote {
+    font-size: 12px;
+    color: var(--ink-dim);
+    line-height: 1.5;
+    margin: -4px 0 0 0;
+  }
+
+  .ruleNote.hidden { display: none; }
+
   /* Two live pictures of the same gems under two different settings. */
   .tourPanels {
     display: flex;
@@ -1547,6 +1638,9 @@
   #app.hdChrome .modeTile .modeBlurb { color: var(--ink-dim); }
   #app.hdChrome .screenSub { color: var(--ink-dim); }
   #app.hdChrome .screenNote { color: var(--ink-dim); }
+  #app.hdChrome .ruleNote { color: var(--ink-dim); }
+  #app.hdChrome .ruleLabel { color: var(--ink); }
+  #app.hdChrome .stepperValue { color: var(--ink); }
   #app.hdChrome .screenBody .rule { color: #ded7f5; }
 
   /* Standard runs four gem colours through the title in one gradient.
@@ -1827,7 +1921,9 @@
      - Release with 3 or more linked and they burst.
      - Cross your own path to close a loop: every gem of that colour
        on the board is wiped out.
-     - 5 or 6 linked forges a Bomb. 7 or more forges a Prism.
+     - 5 or 6 linked forges a Bomb. 7 or more forges a Prism. 12 or
+       more forges a Chromatic, which joins any colour and lets the link
+       change colour on the far side of it.
      - The Blight creeps across the board and ends the run if it
        takes fifteen cells. Linking a blighted gem cures it.
    ================================================================== */
@@ -1936,9 +2032,34 @@ const HD_GLINT_VISIBLE_FRACTION = 0.2;
    keeps diagonal drags from clipping their neighbours. */
 const HIT_RADIUS = 0.55;
 
+/* The link lengths the game is balanced around. Every mode names a rules
+   object built from these, and a mode that lets the player change them
+   names its own, so nothing at play time reads the bare constants: the
+   number in play is the mode's to say. */
 const MIN_LINK = 3;
-const BOMB_LINK = 5;      // linking this many forges a bomb
-const PRISM_LINK = 7;     // linking this many forges a prism
+const BOMB_LINK = 5;        // linking this many forges a bomb
+const PRISM_LINK = 7;       // linking this many forges a prism
+const CHROMATIC_LINK = 12;  // linking this many forges a chromatic
+
+const STANDARD_LINK_RULES = {
+  minLink: MIN_LINK,
+  bombEnabled: true,
+  bombLink: BOMB_LINK,
+  prismEnabled: true,
+  prismLink: PRISM_LINK,
+  chromaticEnabled: true,
+  chromaticLink: CHROMATIC_LINK
+};
+
+/* What a link of this length leaves standing on its last gem under the
+   rules in play. Checked from the strongest tier down, so the longest
+   link forges the strongest gem, and "none" when it reaches no tier. */
+function forgeKindForLink(length, rules) {
+  if (rules.chromaticEnabled === true && length >= rules.chromaticLink) return "chromatic";
+  if (rules.prismEnabled === true && length >= rules.prismLink) return "prism";
+  if (rules.bombEnabled === true && length >= rules.bombLink) return "bomb";
+  return "none";
+}
 
 /* How long a gem spends bursting before it leaves the board. */
 const BURST_SECONDS = 0.24;
@@ -2040,10 +2161,10 @@ const HINT_LATE_FROM_LEVEL = 26;
 const HINT_DELAY_MIN_SECONDS = 5;
 const HINT_DELAY_MAX_SECONDS = 30;
 
-/* Caps on the search that looks for a move. Depth nine is two past the
-   seven that forges a prism, which is the deepest link with a mechanic
-   attached, and a longer trail than that is hard to follow anyway. The
-   node budget is per starting cell. */
+/* Caps on the search that looks for a move. Nine is two past the seven a
+   standard prism takes, and a longer trail than that is hard to follow
+   anyway. A mode that sets a threshold above it simply never has that
+   forge suggested. The node budget is per starting cell. */
 const HINT_MAX_LINK = 9;
 const HINT_NODE_BUDGET = 500;
 
@@ -2062,7 +2183,7 @@ function makeGem(colourIndex) {
   return {
     kind: "gem",
     colour: colourIndex,
-    special: "none",     // "none" | "bomb" | "prism"
+    special: "none",     // "none" | "bomb" | "prism" | "chromatic"
     blighted: false,
     blightAge: 0,        // moves spent infected, counts up to the walk
     blightShow: 1,       // 1 visible, 0 hidden, below 0 still crawling in
@@ -2149,9 +2270,27 @@ const game = {
   phase: "idle",         // "idle" | "bursting" | "falling" | "shuffling" | "over" | "levelDone"
 
   modeId: "classic",
-  difficulty: "normal",  // the selector that sets this arrives with the difficulty work
+  difficulty: "normal",
+
+  /* The rules a Custom run was begun on, saved with the run and null on
+     every other mode. The setup screen edits customPicks; this is the
+     copy taken when the run starts. */
+  customRules: null,
+
+  /* Bombs, prisms and chromatics counted off a finished board, on a mode
+     that carries them onto the next one. Filled when the level clears
+     and placed when the next level lays out, so it never needs saving:
+     the card in between is modal and nothing writes a save under it. */
+  specialCarry: { bomb: 0, prism: 0, chromatic: 0 },
   path: [],              // list of {row, col} making up the current link
+
+  /* A link is a run of colour segments. A chromatic gem closes the
+     segment it lands in and the next plain gem opens another, so the
+     link holds every segment colour in order and the colour of the one
+     being drawn. Both are derived from the path by readPathColours and
+     never maintained by hand. -1 while no segment is fixed. */
   pathColour: -1,
+  pathColours: [],
   loopClosed: false,
   score: 0,
   level: 1,
@@ -3154,32 +3293,49 @@ function scatterStones(count, toughness) {
    Level goals
    ------------------------------------------------------------------ */
 
+/* Colour, score, stone, round and round. */
 function makeGoalForLevel(level) {
   const kindIndex = (level - 1) % 3;
 
-  if (kindIndex === 0) {
-    const colour = Math.floor(Math.random() * coloursForLevel(level));
-    const target = 14 + level;
-    return {
-      kind: "colour",
-      colour: colour,
-      target: target,
-      progress: 0,
-      label: "Burst " + target
-    };
-  }
+  if (kindIndex === 0) return makeColourGoal(level);
+  if (kindIndex === 1) return makeScoreGoal(level);
+  return makeStoneGoal(level);
+}
 
-  if (kindIndex === 1) {
-    const target = 600 + level * 550;
-    return {
-      kind: "score",
-      colour: -1,
-      target: target,
-      progress: 0,
-      label: "Score " + target + " points"
-    };
-  }
+/* Colour, score, colour, score, for a board that has no stones to ask
+   for. A stone goal on such a board would be a goal of zero, met on the
+   first link. */
+function makeGoalWithoutStones(level) {
+  const kindIndex = (level - 1) % 2;
 
+  if (kindIndex === 0) return makeColourGoal(level);
+  return makeScoreGoal(level);
+}
+
+function makeColourGoal(level) {
+  const colour = Math.floor(Math.random() * coloursForLevel(level));
+  const target = 14 + level;
+  return {
+    kind: "colour",
+    colour: colour,
+    target: target,
+    progress: 0,
+    label: "Burst " + target
+  };
+}
+
+function makeScoreGoal(level) {
+  const target = 600 + level * 550;
+  return {
+    kind: "score",
+    colour: -1,
+    target: target,
+    progress: 0,
+    label: "Score " + target + " points"
+  };
+}
+
+function makeStoneGoal(level) {
   const target = stoneCountForLevel(level);
   return {
     kind: "stone",
@@ -3393,9 +3549,14 @@ const CLASSIC_DIFFICULTIES = {
 /* One line under the selector saying what the player is picking, so the
    three words are a choice instead of a guess. */
 function classicDifficultySummary(difficultyId) {
+  return classicBudgetPhrase(difficultyId) + " " + hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+}
+
+/* What runs out and how many continues you hold, which is the half of
+   the summary Custom borrows when it plays on this base. */
+function classicBudgetPhrase(difficultyId) {
   const tuning = CLASSIC_DIFFICULTIES[difficultyId];
-  return tuning.movesEarly + " moves to start, " +
-    continuePhrase(tuning.continuesAtStart) + ". " + hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+  return tuning.movesEarly + " moves to start, " + continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* Both of these are said on every mode's start screen that has them, so
@@ -3670,17 +3831,25 @@ const TIME_ATTACK_BUDGET_RESCUE = {
 };
 
 function timeAttackRulesHtml() {
-  return howToPlayHtml() + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+    timeAttackOwnRulesHtml(CLASSIC_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+function timeAttackOwnRulesHtml(hazards, linkRules) {
+  return "" +
     "<div class='rule'><span class='pip'>&#9201;</span><span>The <b>clock</b> replaces the move budget. It runs while you are looking at the board and stops for menus, for cards, and while gems are bursting.</span></div>" +
     "<div class='rule'><span class='pip'>&#8679;</span><span><b>+Time</b> takes the place of +2 Moves. Every second left when a level clears is worth <b>" + SECONDS_BONUS_EACH + "</b> points.</span></div>" +
     retryContinueRuleHtml();
 }
 
 function timeAttackDifficultySummary(difficultyId) {
+  return timeAttackBudgetPhrase(difficultyId) + " " + hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+}
+
+function timeAttackBudgetPhrase(difficultyId) {
   const tuning = TIME_ATTACK_DIFFICULTIES[difficultyId];
   return clockText(tuning.secondsEarly) + " to start, +" + tuning.secondsPerBoost +
-    "s a boost, " + continuePhrase(tuning.continuesAtStart) + ". " +
-    hazardPhrase(CLASSIC_HAZARDS, difficultyId);
+    "s a boost, " + continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* The same full board Classic shows, under a clock running down. */
@@ -3790,17 +3959,23 @@ function layOutEndlessHazards() {
   scatterStones(game.goal.target, stoneToughnessForLevel(game.level));
 }
 
+/* A board whose blight ceiling is zero cannot be infected at all, which
+   is what a Custom run with blight switched off plays on. The box says
+   so instead of reading 0/0. */
 function blightLimitText() {
+  if (blightLossThreshold() === 0) return "Off";
   return countBlight() + "/" + blightLossThreshold();
 }
 
 /* Backwards from a budget: this box counts something climbing, so it
    goes to alarm as the number gets large. */
 function blightLimitIsCritical() {
+  if (blightLossThreshold() === 0) return false;
   return countBlight() >= blightLossThreshold() - 2;
 }
 
 function blightLimitPressure() {
+  if (blightLossThreshold() === 0) return 0;
   return Math.max(0, Math.min(1, countBlight() / blightLossThreshold()));
 }
 
@@ -3873,20 +4048,32 @@ const ENDLESS_ITEMS = [
 ];
 
 function endlessRulesHtml() {
-  return howToPlayHtml() + hazardRulesHtml() +
-    "<div class='rule'><span class='pip'>&#8734;</span><span>Nothing runs out. The <b>board is never cleared</b>: meeting a goal raises the level and play carries straight on where it stood.</span></div>" +
-    "<div class='rule'><span class='pip'>&#9760;</span><span>Because nothing sweeps the board, the <b>Blight</b> only ever leaves by being cured. It is the one thing that can end a run.</span></div>" +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+    endlessOwnRulesHtml(ENDLESS_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+/* The blight line is only true where there is blight. */
+function endlessOwnRulesHtml(hazards, linkRules) {
+  let text = "<div class='rule'><span class='pip'>&#8734;</span><span>Nothing runs out. The <b>board is never cleared</b>: meeting a goal raises the level and play carries straight on where it stood.</span></div>";
+  if (hazards.maxBlightOnBoard > 0) {
+    text += "<div class='rule'><span class='pip'>&#9760;</span><span>Because nothing sweeps the board, the <b>Blight</b> only ever leaves by being cured. It is the one thing that can end a run.</span></div>";
+  }
+  return text +
     "<div class='rule'><span class='pip'>&#8853;</span><span><b>Snipe</b> takes the place of +2 Moves. Put the crosshair on any gem and it is gone.</span></div>" +
     "<div class='rule'><span class='pip'>&#10010;</span><span>You start with a stock of <b>continues</b> and earn one every " + CONTINUE_EVERY_LEVELS + " levels. Here a continue <b>cures the whole board</b> instead of replaying anything, and costs the score you made on the level.</span></div>";
 }
 
 function endlessDifficultySummary(difficultyId) {
-  const tuning = ENDLESS_DIFFICULTIES[difficultyId];
   const hazards = ENDLESS_HAZARDS[difficultyId];
 
-  return "Nothing runs out, " + continuePhrase(tuning.continuesAtStart) + ". Blight every " +
+  return endlessBudgetPhrase(difficultyId) + " Blight every " +
     hazards.blightIntervalEarly + " moves from level " + hazards.blightFirstLevel +
     ", and " + hazards.maxBlightOnBoard + " blighted cells ends the run.";
+}
+
+function endlessBudgetPhrase(difficultyId) {
+  const tuning = ENDLESS_DIFFICULTIES[difficultyId];
+  return "Nothing runs out, " + continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* A board mid run, with the crosshair sitting on the gem about to go. */
@@ -3935,6 +4122,10 @@ const ELIMINATION_DIFFICULTIES = {
 /* The practical ceiling is somewhere near 56 of the 63, so a perfect
    clear is a rare thing worth paying for. */
 const PERFECT_CLEAR_BONUS = 5000;
+
+/* The minimum link, as the rules sentence says it. Custom allows two to
+   five. */
+const LINK_COUNT_WORDS = { 2: "Two", 3: "Three", 4: "Four", 5: "Five" };
 
 function eliminationQuotaForLevel(level) {
   const tuning = activeTuning();
@@ -4028,20 +4219,35 @@ const ELIMINATION_ITEMS = [
 ];
 
 function eliminationRulesHtml() {
-  return howToPlayHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) +
+    eliminationOwnRulesHtml(ELIMINATION_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+/* The shortest link is whatever the rules say it is, and a minimum of
+   two strands nothing, so the stranding sentence is only true above it. */
+function eliminationOwnRulesHtml(hazards, linkRules) {
+  let perfectClear = "Empty the board completely for a <b>perfect clear</b> worth " + PERFECT_CLEAR_BONUS + ".";
+  if (linkRules.minLink > 2) {
+    perfectClear += " " + LINK_COUNT_WORDS[linkRules.minLink] + " gems is the shortest link there is, so a few always end up stranded.";
+  }
+  return "" +
     "<div class='rule'><span class='pip'>&#9633;</span><span>Nothing falls in to replace what you clear. The board <b>drains</b>, and the gems above slide down into the gaps.</span></div>" +
     "<div class='rule'><span class='pip'>&#9679;</span><span>The level runs until <b>nothing links</b>. Meet the quota by then and it is cleared. Fall short and it is not.</span></div>" +
-    "<div class='rule'><span class='pip'>&#9819;</span><span>Empty the board completely for a <b>perfect clear</b> worth " + PERFECT_CLEAR_BONUS + ". Three gems is the shortest link there is, so a few always end up stranded.</span></div>" +
+    "<div class='rule'><span class='pip'>&#9819;</span><span>" + perfectClear + "</span></div>" +
     "<div class='rule'><span class='pip'>&#8853;</span><span>No blight and no stones here. <b>Snipe</b> takes any single gem, which is what a stranded one is for.</span></div>" +
     retryContinueRuleHtml();
 }
 
 function eliminationDifficultySummary(difficultyId) {
+  return eliminationBudgetPhrase(difficultyId) + " No blight and no stones.";
+}
+
+function eliminationBudgetPhrase(difficultyId) {
   const tuning = ELIMINATION_DIFFICULTIES[difficultyId];
 
   return "Clear " + (tuning.quotaBase + Math.floor(tuning.quotaPerLevel)) +
     " of 63 on the first board, rising to " + tuning.quotaCap + ", with " +
-    continuePhrase(tuning.continuesAtStart) + ". No blight and no stones.";
+    continuePhrase(tuning.continuesAtStart) + ".";
 }
 
 /* A board part way through draining: the top two rows gone and the
@@ -4057,6 +4263,349 @@ function drawEliminationTileMark(tray) {
   drawTileChip(tray, "0");
 }
 
+/* ---- what Custom answers ---- */
+
+/* Custom is a base mode with overrides. The base gives everything the
+   four modes differ on: what runs out, how a link is paid for, the loss
+   tests, the third HUD box, the item row, the goal maker, whether the
+   board persists and refills, and the continue. The picks then remove
+   blight, remove stones, remove loops, change what a link forges, and
+   carry specials across.
+
+   The rules object below is the whole of what the player chooses. The
+   difficulty is picked on the same selector every other mode has. */
+const CUSTOM_BASE_MODE_IDS = ["classic", "timeattack", "endless", "elimination"];
+
+/* A six link minimum on a five colour board is unplayable, and the exact
+   link search is priced for five. */
+const CUSTOM_MIN_LINK_LOWEST = 2;
+const CUSTOM_MIN_LINK_HIGHEST = 5;
+
+const CUSTOM_THRESHOLD_LOWEST = 2;
+const CUSTOM_THRESHOLD_HIGHEST = 20;
+
+/* The standard game, which is where every pick starts. */
+function defaultCustomRules() {
+  return {
+    baseModeId: "classic",
+    blightEnabled: true,
+    stonesEnabled: true,
+    loopsEnabled: true,
+    specialsCarryOver: false,
+    links: {
+      minLink: MIN_LINK,
+      bombEnabled: true,
+      bombLink: BOMB_LINK,
+      prismEnabled: true,
+      prismLink: PRISM_LINK,
+      chromaticEnabled: true,
+      chromaticLink: CHROMATIC_LINK
+    }
+  };
+}
+
+/* A copy with nothing shared, so the run's rules and the setup screen's
+   picks can never edit each other. */
+function cloneCustomRules(rules) {
+  return {
+    baseModeId: rules.baseModeId,
+    blightEnabled: rules.blightEnabled,
+    stonesEnabled: rules.stonesEnabled,
+    loopsEnabled: rules.loopsEnabled,
+    specialsCarryOver: rules.specialsCarryOver,
+    links: {
+      minLink: rules.links.minLink,
+      bombEnabled: rules.links.bombEnabled,
+      bombLink: rules.links.bombLink,
+      prismEnabled: rules.links.prismEnabled,
+      prismLink: rules.links.prismLink,
+      chromaticEnabled: rules.links.chromaticEnabled,
+      chromaticLink: rules.links.chromaticLink
+    }
+  };
+}
+
+/* What the setup screen edits, and what settings remember between
+   sessions. A run takes a copy when it starts. */
+let customPicks = defaultCustomRules();
+
+/* Every rule a Custom rules object has to carry, and the ranges each one
+   is allowed. A rules object that fails this is a bug wherever it came
+   from, so the failure names the field. */
+function checkCustomRules(rules, where) {
+  if (CUSTOM_BASE_MODE_IDS.indexOf(rules.baseModeId) === -1) {
+    throw new Error("PRISM PURGE: " + where + " names a base mode of " +
+      JSON.stringify(rules.baseModeId) + ", which is not one Custom can play.");
+  }
+
+  checkRuleSwitch(rules.blightEnabled, where, "blightEnabled");
+  checkRuleSwitch(rules.stonesEnabled, where, "stonesEnabled");
+  checkRuleSwitch(rules.loopsEnabled, where, "loopsEnabled");
+  checkRuleSwitch(rules.specialsCarryOver, where, "specialsCarryOver");
+
+  if (rules.baseModeId === "elimination") {
+    if (rules.blightEnabled === true || rules.stonesEnabled === true) {
+      throw new Error("PRISM PURGE: " + where + " has blight or stones on an Elimination base, " +
+        "which plays without either.");
+    }
+  }
+
+  const links = rules.links;
+  checkRuleSwitch(links.bombEnabled, where, "links.bombEnabled");
+  checkRuleSwitch(links.prismEnabled, where, "links.prismEnabled");
+  checkRuleSwitch(links.chromaticEnabled, where, "links.chromaticEnabled");
+  checkRuleNumber(links.minLink, where, "links.minLink", CUSTOM_MIN_LINK_LOWEST, CUSTOM_MIN_LINK_HIGHEST);
+  checkRuleNumber(links.bombLink, where, "links.bombLink", CUSTOM_THRESHOLD_LOWEST, CUSTOM_THRESHOLD_HIGHEST);
+  checkRuleNumber(links.prismLink, where, "links.prismLink", CUSTOM_THRESHOLD_LOWEST, CUSTOM_THRESHOLD_HIGHEST);
+  checkRuleNumber(links.chromaticLink, where, "links.chromaticLink", CUSTOM_THRESHOLD_LOWEST, CUSTOM_THRESHOLD_HIGHEST);
+
+  /* Every enabled threshold, in tier order, has to sit strictly above
+     the enabled one before it, so the longest link always forges the
+     strongest gem. A disabled tier is skipped. */
+  let previousName = "links.minLink";
+  let previous = links.minLink;
+  const tiers = enabledLinkTiers(links);
+  for (let i = 0; i < tiers.length; i++) {
+    if (tiers[i].length <= previous) {
+      throw new Error("PRISM PURGE: " + where + " sets " + tiers[i].name + " to " + tiers[i].length +
+        ", which is not above " + previousName + " at " + previous + ".");
+    }
+    previousName = tiers[i].name;
+    previous = tiers[i].length;
+  }
+}
+
+/* The forge tiers the rules have on, in order, each with the length it
+   needs. The setup screen walks the same list to keep the steppers in
+   order. */
+function enabledLinkTiers(links) {
+  const tiers = [];
+  if (links.bombEnabled === true) tiers.push({ name: "links.bombLink", length: links.bombLink });
+  if (links.prismEnabled === true) tiers.push({ name: "links.prismLink", length: links.prismLink });
+  if (links.chromaticEnabled === true) tiers.push({ name: "links.chromaticLink", length: links.chromaticLink });
+  return tiers;
+}
+
+function checkRuleSwitch(value, where, fieldName) {
+  if (value === true || value === false) return;
+  throw new Error("PRISM PURGE: " + where + " should have " + fieldName + " on or off and has " +
+    JSON.stringify(value) + ".");
+}
+
+function checkRuleNumber(value, where, fieldName, lowest, highest) {
+  const inRange = Number.isInteger(value) === true && value >= lowest && value <= highest;
+  if (inRange === true) return;
+  throw new Error("PRISM PURGE: " + where + " should have " + fieldName + " from " + lowest +
+    " to " + highest + " and has " + JSON.stringify(value) + ".");
+}
+
+/* Blight and stones off are expressed as zeros in the hazard table, the
+   way Elimination's already are. infectRandomCell and spreadBlight refuse
+   at the cap, so a cap of zero is a board that cannot be infected, and
+   blightHasWonLoss already returns null where blight cannot end a level.
+   Every other field is the base's, so blight that is on is the base
+   mode's blight at that difficulty.
+
+   The Elimination base has no hazard numbers to compose from and plays
+   with both off, so its table is used as it stands. */
+function composeCustomHazards(base, rules) {
+  if (rules.baseModeId === "elimination") return base.hazards;
+
+  return {
+    easy: composeCustomHazardBlock(base.hazards.easy, rules),
+    normal: composeCustomHazardBlock(base.hazards.normal, rules),
+    hard: composeCustomHazardBlock(base.hazards.hard, rules)
+  };
+}
+
+function composeCustomHazardBlock(baseBlock, rules) {
+  const block = {
+    maxBlightOnBoard: baseBlock.maxBlightOnBoard,
+    blightEndsLevel: baseBlock.blightEndsLevel,
+    blightCarryCap: baseBlock.blightCarryCap,
+    blightFirstLevel: baseBlock.blightFirstLevel,
+    blightIntervalEarly: baseBlock.blightIntervalEarly,
+    blightIntervalMid: baseBlock.blightIntervalMid,
+    blightIntervalLate: baseBlock.blightIntervalLate,
+    blightSeedsFromLevel: baseBlock.blightSeedsFromLevel,
+    blightSeedsEvery: baseBlock.blightSeedsEvery,
+    blightSeedsCap: baseBlock.blightSeedsCap,
+
+    maxStones: baseBlock.maxStones,
+    stoneToughnessBase: baseBlock.stoneToughnessBase,
+    stoneToughnessEvery: baseBlock.stoneToughnessEvery,
+    stoneToughnessCap: baseBlock.stoneToughnessCap
+  };
+
+  if (rules.blightEnabled === false) {
+    block.maxBlightOnBoard = 0;
+    block.blightEndsLevel = false;
+    block.blightCarryCap = 0;
+    block.blightSeedsCap = 0;
+  }
+  if (rules.stonesEnabled === false) {
+    block.maxStones = 0;
+  }
+  return block;
+}
+
+/* The base mode the run's rules name. */
+function customBaseMode() {
+  return modeById(game.customRules.baseModeId);
+}
+
+/* Two places do not read the hazard table and are gated here by hand:
+   the pair of stones Classic scatters from level four whether or not the
+   cap allows it, and the stone goals in the goal cycle. */
+function makeCustomGoal(level) {
+  const rules = game.customRules;
+  if (rules.baseModeId === "elimination") return makeEliminationGoal(level);
+  if (rules.stonesEnabled === true) return makeGoalForLevel(level);
+  return makeGoalWithoutStones(level);
+}
+
+function layOutCustomHazards() {
+  const rules = game.customRules;
+  if (rules.baseModeId === "elimination") return;
+
+  if (rules.stonesEnabled === true) {
+    const toughness = stoneToughnessForLevel(game.level);
+    if (game.goal.kind === "stone") {
+      scatterStones(game.goal.target, toughness);
+    } else if (rules.baseModeId !== "endless" && game.level >= 4) {
+      scatterStones(2, toughness);
+    }
+  }
+
+  if (rules.blightEnabled === true) {
+    seedBlight();
+  }
+}
+
+/* Fills the Custom entry's play time fields from a rules object, one
+   assignment per field so a reader sees where each answer comes from.
+   Called at boot with the defaults, whenever the setup screen changes a
+   pick, and when a Custom run starts or loads, so the entry always holds
+   the rules that matter right now. */
+function applyCustomRules(rules, where) {
+  checkCustomRules(rules, where);
+  customRulesApplied = rules;
+
+  const base = modeById(rules.baseModeId);
+  const custom = modeById("custom");
+
+  custom.items = base.items;
+  custom.difficulties = base.difficulties;
+  custom.hazards = composeCustomHazards(base, rules);
+  custom.linkRules = rules.links;
+  custom.loopsEnabled = rules.loopsEnabled;
+  custom.carriesSpecials = rules.specialsCarryOver;
+
+  custom.rebuildsBoardEachLevel = base.rebuildsBoardEachLevel;
+  custom.refillsClearedCells = base.refillsClearedCells;
+  custom.rerollsDeadBoard = base.rerollsDeadBoard;
+  custom.showsLevelClearCard = base.showsLevelClearCard;
+
+  custom.goalIsMet = base.goalIsMet;
+  custom.makeGoalForLevel = makeCustomGoal;
+  custom.layOutHazards = layOutCustomHazards;
+  custom.advanceHazards = base.advanceHazards;
+  custom.startBudget = base.startBudget;
+  custom.levelClearBonus = base.levelClearBonus;
+  custom.levelClearSubtitle = base.levelClearSubtitle;
+  custom.nextLevelWarning = base.nextLevelWarning;
+
+  custom.spendOnLink = base.spendOnLink;
+  custom.lossBeforeGoal = base.lossBeforeGoal;
+  custom.lossAfterGoal = base.lossAfterGoal;
+
+  custom.advanceTime = base.advanceTime;
+  custom.budgetRescue = base.budgetRescue;
+  custom.takeContinue = base.takeContinue;
+  custom.continueDescription = base.continueDescription;
+
+  custom.limitLabel = base.limitLabel;
+  custom.limitText = base.limitText;
+  custom.limitIsCritical = base.limitIsCritical;
+  custom.limitPressure = base.limitPressure;
+}
+
+/* The rules text for the entry as it currently stands: the shared rules
+   printed from its link rules, each hazard only where it is on, then the
+   base mode's own lines. */
+function customRulesHtml() {
+  const custom = modeById("custom");
+  const base = modeById(customRulesApplied.baseModeId);
+  const hazards = custom.hazards.normal;
+
+  let text = howToPlayHtml(custom.linkRules, custom.loopsEnabled);
+  if (hazards.maxStones > 0) text += stoneRuleHtml(custom.loopsEnabled);
+  if (hazards.maxBlightOnBoard > 0) text += blightRuleHtml(custom.loopsEnabled);
+  text += base.ownRulesHtml(hazards, custom.linkRules);
+  return text;
+}
+
+/* The rules object the entry was last filled from. The setup screen
+   fills it from the picks and a run fills it from its own copy, so this
+   is whichever of the two is standing. */
+let customRulesApplied = null;
+
+function customDifficultySummary(difficultyId) {
+  const rules = customRulesApplied;
+  const base = modeById(rules.baseModeId);
+  const links = rules.links;
+
+  let text = base.name + " on " + difficultyName(difficultyId) + ": " +
+    base.budgetPhrase(difficultyId) + " ";
+
+  /* The Elimination base has no hazards to switch, so its sentence
+     starts at the loops. */
+  const switches = [];
+  if (rules.baseModeId !== "elimination") {
+    switches.push(rules.blightEnabled === true ? "blight on" : "blight off");
+    switches.push(rules.stonesEnabled === true ? "stones on" : "stones off");
+  }
+  switches.push(rules.loopsEnabled === true ? "loops on" : "loops off");
+  const switchesText = switches.join(", ") + ". ";
+  text += switchesText.charAt(0).toUpperCase() + switchesText.slice(1);
+
+  text += "Links of " + links.minLink;
+  text += ", bomb " + (links.bombEnabled === true ? "at " + links.bombLink : "off");
+  text += ", prism " + (links.prismEnabled === true ? "at " + links.prismLink : "off");
+  text += ", chromatic " + (links.chromaticEnabled === true ? "at " + links.chromaticLink : "off") + ".";
+
+  if (rules.specialsCarryOver === true) text += " Specials carry over.";
+  return text;
+}
+
+/* Custom is never the base of another mode, so it has no lines of its
+   own to lend one and no budget phrase to borrow. */
+function noOwnRulesHtml(hazards, linkRules) {
+  return "";
+}
+
+function noBudgetPhrase(difficultyId) {
+  return "";
+}
+
+/* Every colour, in a sweep across the rows, with the wheel over the
+   middle. */
+const CUSTOM_TILE_GEMS = [
+  [0, 0, 1, 1, 4],
+  [1, 1, 2, 2, 0],
+  [2, 2, 3, 3, 1],
+  [3, 3, 4, 4, 2]
+];
+
+const CUSTOM_TILE_WHEEL_ROW = 1;
+const CUSTOM_TILE_WHEEL_COL = 2;
+
+function drawCustomTileMark(tray) {
+  const centreX = tray.originX + CUSTOM_TILE_WHEEL_COL * tray.cell + tray.cell / 2;
+  const centreY = tray.originY + CUSTOM_TILE_WHEEL_ROW * tray.cell + tray.cell / 2;
+  drawChromaticMarks(centreX, centreY, tray.cell * 0.38, 0);
+}
+
 /* ---- the registry ---- */
 
 const GAME_MODES = [
@@ -4067,21 +4616,27 @@ const GAME_MODES = [
     blurb: "Clear each level's goal before the moves run out. Stones and " +
            "blight get in the way, and continues get you out of trouble.",
     rulesHtml: classicRulesHtml,
+    ownRulesHtml: classicOwnRulesHtml,
 
     difficulties: CLASSIC_DIFFICULTIES,
     difficultySummary: classicDifficultySummary,
+    budgetPhrase: classicBudgetPhrase,
     hazards: CLASSIC_HAZARDS,
 
     tileGems: CLASSIC_TILE_GEMS,
     drawTileMark: drawClassicTileMark,
 
     items: CLASSIC_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
     /* Every run opens on a fresh board. This says whether each level
        after the first gets one too. */
     rebuildsBoardEachLevel: true,
     refillsClearedCells: true,
     rerollsDeadBoard: true,
+    showsLevelClearCard: true,
 
     goalIsMet: goalReached,
     makeGoalForLevel: makeGoalForLevel,
@@ -4114,19 +4669,25 @@ const GAME_MODES = [
     blurb: "The same goals as Classic, against a countdown. The clock runs " +
            "while you think, and charge buys more of it.",
     rulesHtml: timeAttackRulesHtml,
+    ownRulesHtml: timeAttackOwnRulesHtml,
 
     difficulties: TIME_ATTACK_DIFFICULTIES,
     difficultySummary: timeAttackDifficultySummary,
+    budgetPhrase: timeAttackBudgetPhrase,
     hazards: CLASSIC_HAZARDS,
 
     tileGems: TIME_ATTACK_TILE_GEMS,
     drawTileMark: drawTimeAttackTileMark,
 
     items: TIME_ATTACK_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
     rebuildsBoardEachLevel: true,
     refillsClearedCells: true,
     rerollsDeadBoard: true,
+    showsLevelClearCard: true,
 
     goalIsMet: goalReached,
     makeGoalForLevel: makeGoalForLevel,
@@ -4159,20 +4720,27 @@ const GAME_MODES = [
     blurb: "One board, carried the whole way. Nothing runs out, the level " +
            "just climbs, and only the blight can stop you.",
     rulesHtml: endlessRulesHtml,
+    ownRulesHtml: endlessOwnRulesHtml,
 
     difficulties: ENDLESS_DIFFICULTIES,
     difficultySummary: endlessDifficultySummary,
+    budgetPhrase: endlessBudgetPhrase,
     hazards: ENDLESS_HAZARDS,
 
     tileGems: ENDLESS_TILE_GEMS,
     drawTileMark: drawEndlessTileMark,
 
     items: ENDLESS_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
-    /* The whole point of the mode. */
+    /* The whole point of the mode. The level rises and play carries
+       straight on, with nothing put in front of the board. */
     rebuildsBoardEachLevel: false,
     refillsClearedCells: true,
     rerollsDeadBoard: true,
+    showsLevelClearCard: false,
 
     goalIsMet: goalReached,
     makeGoalForLevel: makeGoalForLevel,
@@ -4205,15 +4773,20 @@ const GAME_MODES = [
     blurb: "Nothing falls in to replace what you clear. The board drains, " +
            "and the level lasts until nothing links.",
     rulesHtml: eliminationRulesHtml,
+    ownRulesHtml: eliminationOwnRulesHtml,
 
     difficulties: ELIMINATION_DIFFICULTIES,
     difficultySummary: eliminationDifficultySummary,
+    budgetPhrase: eliminationBudgetPhrase,
     hazards: ELIMINATION_HAZARDS,
 
     tileGems: ELIMINATION_TILE_GEMS,
     drawTileMark: drawEliminationTileMark,
 
     items: ELIMINATION_ITEMS,
+    linkRules: STANDARD_LINK_RULES,
+    loopsEnabled: true,
+    carriesSpecials: false,
 
     rebuildsBoardEachLevel: true,
 
@@ -4222,6 +4795,7 @@ const GAME_MODES = [
        again out of nowhere. */
     refillsClearedCells: false,
     rerollsDeadBoard: false,
+    showsLevelClearCard: true,
 
     goalIsMet: eliminationGoalIsMet,
     makeGoalForLevel: makeEliminationGoal,
@@ -4245,6 +4819,24 @@ const GAME_MODES = [
     limitText: gemsLeftText,
     limitIsCritical: gemsLeftIsCritical,
     limitPressure: gemsLeftPressure
+  },
+
+  /* Custom's identity is its own. Every play time field is filled in by
+     applyCustomRules from the rules in play, which runs on the defaults
+     before the registry is checked, so the entry is complete by then. */
+  {
+    id: "custom",
+    name: "Custom",
+    defaultBackground: "loop",
+    blurb: "Your rules. Pick a game type, then switch every rule on or " +
+           "off, from the blight to what a link forges.",
+    rulesHtml: customRulesHtml,
+    ownRulesHtml: noOwnRulesHtml,
+    difficultySummary: customDifficultySummary,
+    budgetPhrase: noBudgetPhrase,
+
+    tileGems: CUSTOM_TILE_GEMS,
+    drawTileMark: drawCustomTileMark
   }
 ];
 
@@ -4304,14 +4896,22 @@ function activeHazards() {
   return hazards;
 }
 
+/* The link lengths in play: the minimum, and what forges at what length.
+   Four modes name the standard set, and a mode that lets the player
+   change them names its own. */
+function activeLinkRules() {
+  return activeMode().linkRules;
+}
+
 /* Every field above is required of every mode. This is a checklist for
    the entries, not a table anything reads at play time: a mode that
    forgets one says so at load, where it is a typo to fix, instead of at
    level twelve where it is a bug to hunt. */
 const MODE_FIELDS = [
-  "id", "name", "blurb", "rulesHtml", "difficulties", "difficultySummary",
-  "hazards", "tileGems", "drawTileMark", "items", "rebuildsBoardEachLevel",
-  "refillsClearedCells", "rerollsDeadBoard", "goalIsMet", "makeGoalForLevel",
+  "id", "name", "blurb", "rulesHtml", "ownRulesHtml", "difficulties", "difficultySummary", "budgetPhrase",
+  "hazards", "tileGems", "drawTileMark", "items", "linkRules", "loopsEnabled", "carriesSpecials",
+  "rebuildsBoardEachLevel",
+  "refillsClearedCells", "rerollsDeadBoard", "showsLevelClearCard", "goalIsMet", "makeGoalForLevel",
   "layOutHazards", "advanceHazards", "startBudget",
   "levelClearBonus", "levelClearSubtitle", "nextLevelWarning", "spendOnLink",
   "lossBeforeGoal",
@@ -4375,6 +4975,7 @@ function checkModeEntries() {
   }
 }
 
+applyCustomRules(customPicks, "the default Custom rules");
 checkModeEntries();
 
 /* =====================================================================
@@ -4651,9 +5252,23 @@ const BackgroundHandler = (function () {
    Starting and advancing a run
    ------------------------------------------------------------------ */
 
-function startRun(modeId, difficulty) {
+/* customRules is the rules a Custom run plays by, handed in so the caller
+   says which: the start screen hands in the picks, and Play Again hands
+   in the rules of the run that just ended. Every other mode passes null.
+   The run keeps its own copy, so the setup screen can be changed
+   underneath it. */
+function startRun(modeId, difficulty, customRules) {
   game.modeId = modeId;
   game.difficulty = difficulty;
+
+  if (modeId === "custom") {
+    game.customRules = cloneCustomRules(customRules);
+    applyCustomRules(game.customRules, "the rules this Custom run was begun on");
+  } else {
+    game.customRules = null;
+  }
+  game.specialCarry = { bomb: 0, prism: 0, chromatic: 0 };
+
   game.bestScore = loadBest(modeId, difficulty);
 
   /* The row belongs to the mode, so it is built once the mode is known
@@ -4691,6 +5306,7 @@ function startLevel(rebuildBoard) {
   game.movesSinceBlight = 0;
   game.path = [];
   game.pathColour = -1;
+  game.pathColours = [];
   game.loopClosed = false;
   game.aiming = "none";
   game.scoreAtLevelStart = game.score;
@@ -4703,6 +5319,7 @@ function startLevel(rebuildBoard) {
 
   if (rebuildBoard === true) {
     buildBoard();
+    placeCarriedSpecials();
   }
 
   /* Always, because a mode that keeps its board still gets a new goal
@@ -4717,6 +5334,51 @@ function startLevel(rebuildBoard) {
   setMusicForLevel(game.level);
   refreshHud();
   saveGame();
+}
+
+/* The bombs, prisms and chromatics standing when the last level cleared,
+   on a mode that carries them. Uncapped, because they were earned. */
+function countSpecials() {
+  const counts = { bomb: 0, prism: 0, chromatic: 0 };
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind !== "gem") continue;
+      if (cell.special === "bomb") counts.bomb++;
+      if (cell.special === "prism") counts.prism++;
+      if (cell.special === "chromatic") counts.chromatic++;
+    }
+  }
+
+  return counts;
+}
+
+/* Puts the carried specials onto a fresh board, each on a random plain
+   gem, and empties the count so nothing is placed twice. */
+function placeCarriedSpecials() {
+  placeSpecialsOfKind("bomb", game.specialCarry.bomb);
+  placeSpecialsOfKind("prism", game.specialCarry.prism);
+  placeSpecialsOfKind("chromatic", game.specialCarry.chromatic);
+  game.specialCarry = { bomb: 0, prism: 0, chromatic: 0 };
+}
+
+function placeSpecialsOfKind(special, count) {
+  for (let placed = 0; placed < count; placed++) {
+    const plainGems = [];
+    for (let row = 0; row < ROWS; row++) {
+      for (let col = 0; col < COLS; col++) {
+        const cell = cellAt(row, col);
+        if (cell.kind === "gem" && cell.special === "none") {
+          plainGems.push(cell);
+        }
+      }
+    }
+    if (plainGems.length === 0) return;
+
+    const pick = plainGems[Math.floor(Math.random() * plainGems.length)];
+    pick.special = special;
+  }
 }
 
 /* The blight you failed to clear last level follows you into this one.
@@ -5116,14 +5778,72 @@ function areNeighbours(a, b) {
   return dr <= 1 && dc <= 1 && (dr + dc) > 0;
 }
 
-/* A prism gem slots into a link of any colour. The colour so far is
-   passed in rather than read off the game, because the hint search
-   walks links the player has not drawn. */
+/* A prism gem slots into a link of any colour, and so does a chromatic.
+   The colour so far is passed in rather than read off the game, because
+   the hint search walks links the player has not drawn. */
 function cellMatchesPath(cell, pathColour) {
   if (cell.kind !== "gem") return false;
   if (cell.special === "prism") return true;
+  if (cell.special === "chromatic") return true;
   if (pathColour === -1) return true;
   return cell.colour === pathColour;
+}
+
+/* What colours a path holds, read off the path itself.
+
+   Every plain gem belongs to a segment, a prism takes the colour of the
+   segment it is in, and a chromatic closes the segment it lands in. The
+   next plain gem after a chromatic opens a new segment of its own colour,
+   which may be the same colour again; nothing requires a change.
+
+   current is the colour of the segment being drawn, -1 while none is
+   fixed. all is every segment colour in order. The hint search reads
+   paths it has not drawn, so this takes the path as an argument. */
+function readPathColours(path) {
+  let current = -1;
+  const all = [];
+  let hasChromatic = false;
+
+  for (let i = 0; i < path.length; i++) {
+    const cell = cellAt(path[i].row, path[i].col);
+
+    if (cell.special === "chromatic") {
+      hasChromatic = true;
+      current = -1;
+      continue;
+    }
+    if (cell.special === "prism") continue;
+
+    if (current === -1) {
+      current = cell.colour;
+      all.push(cell.colour);
+    }
+  }
+
+  return { current: current, all: all, hasChromatic: hasChromatic };
+}
+
+/* Re-derives the live path's colours after every change to it. */
+function syncPathColours() {
+  const colours = readPathColours(game.path);
+  game.pathColour = colours.current;
+  game.pathColours = colours.all;
+}
+
+/* The colour the live link paints with: the segment being drawn, else
+   the last one fixed, else violet, which is what a link made only of
+   specials has always been painted. */
+function pathPaintColour() {
+  if (game.pathColour !== -1) return game.pathColour;
+  if (game.pathColours.length > 0) return game.pathColours[game.pathColours.length - 1];
+  return 4;
+}
+
+/* Whether the live link is a ring that could close: a loop needs a
+   colour to sweep, so at least one segment has to be fixed. A ring that
+   ends on a chromatic has no current colour and is still a loop. */
+function pathHasAColour() {
+  return game.pathColours.length > 0;
 }
 
 /* A ring of linked gems only counts as a loop if it has at least one
@@ -5208,6 +5928,7 @@ function loopInteriorSummary(path) {
     cells: inside,
     bombs: [],
     prisms: [],
+    chromatics: [],
     stones: [],
     blighted: []
   };
@@ -5224,6 +5945,7 @@ function loopInteriorSummary(path) {
 
     if (cell.special === "bomb") summary.bombs.push(spot);
     if (cell.special === "prism") summary.prisms.push(spot);
+    if (cell.special === "chromatic") summary.chromatics.push(spot);
     if (cell.blighted === true) summary.blighted.push(spot);
   }
 
@@ -5233,6 +5955,7 @@ function loopInteriorSummary(path) {
 function loopCaughtSomething(summary) {
   if (summary.bombs.length > 0) return true;
   if (summary.prisms.length > 0) return true;
+  if (summary.chromatics.length > 0) return true;
   if (summary.stones.length > 0) return true;
   if (summary.blighted.length > 0) return true;
   return false;
@@ -5258,6 +5981,7 @@ function loopCentreCell(summary) {
 /* One toast line for the loop, so the loudest catch names itself. The
    marks drawn on the board show the rest. */
 function loopCatchLabel(summary) {
+  if (summary.chromatics.length > 0) return "LOOP + CHROMATIC";
   if (summary.prisms.length > 0) return "LOOP + PRISM";
   if (summary.bombs.length > 0) return "LOOP + BOMB";
   if (summary.stones.length > 0) return "LOOP + STONE";
@@ -5272,12 +5996,7 @@ function beginPath(row, col) {
 
   game.path = [{ row: row, col: col }];
   game.loopClosed = false;
-
-  if (cell.special === "prism") {
-    game.pathColour = -1;
-  } else {
-    game.pathColour = cell.colour;
-  }
+  syncPathColours();
 
   playLinkNote(0);
 }
@@ -5310,24 +6029,30 @@ function extendPath(row, col) {
     const previous = game.path[game.path.length - 2];
     if (previous.row === row && previous.col === col) {
       game.path.pop();
-      if (game.path.length === 1) {
-        const first = cellAt(game.path[0].row, game.path[0].col);
-        game.pathColour = first.special === "prism" ? -1 : first.colour;
-      }
+      syncPathColours();
       playTone(220, 0.08, "sine", 0.08);
       return;
     }
   }
 
   const cell = cellAt(row, col);
-  if (cellMatchesPath(cell, game.pathColour) === false) return;
+  const existingIndex = pathContains(row, col);
 
   /* Only coming back to the gem the link started on closes a loop, and
      only when the ring it makes has something inside it. Brushing the
-     middle of your own trail does nothing at all. */
-  const existingIndex = pathContains(row, col);
-  if (existingIndex !== -1) {
-    if (existingIndex === 0 && game.pathColour !== -1 && loopEnclosesACell(game.path) === true) {
+     middle of your own trail does nothing at all.
+
+     Ordinarily the first gem has to match the colour the ring is on. A
+     chromatic anywhere in the ring lifts that: the link may have changed
+     colour on the far side of it, and it is still one continuous link
+     back to where it began. */
+  if (existingIndex === 0) {
+    if (activeMode().loopsEnabled === false) return;
+
+    const colours = readPathColours(game.path);
+    const firstMatches = cellMatchesPath(cell, game.pathColour) === true || colours.hasChromatic === true;
+
+    if (firstMatches === true && pathHasAColour() === true && loopEnclosesACell(game.path) === true) {
       game.loopClosed = true;
       game.shake = Math.max(game.shake, 7);
       playTone(140, 0.5, "sawtooth", 0.16);
@@ -5341,19 +6066,20 @@ function extendPath(row, col) {
         game.shake = Math.max(game.shake, 10);
         playLoopArmed();
         showBurstToast(loopCatchLabel(summary), "#ffffff");
+      } else if (colours.hasChromatic === true) {
+        showBurstToast("CHROMATIC LOOP", "#ffffff");
       } else {
-        showBurstToast("LOOP!", GEM_COLOURS[game.pathColour].core);
+        showBurstToast("LOOP!", GEM_COLOURS[pathPaintColour()].core);
       }
     }
     return;
   }
+  if (existingIndex !== -1) return;
 
-  /* The first non-prism gem fixes the colour of the whole link. */
-  if (game.pathColour === -1 && cell.special !== "prism") {
-    game.pathColour = cell.colour;
-  }
+  if (cellMatchesPath(cell, game.pathColour) === false) return;
 
   game.path.push(candidate);
+  syncPathColours();
   playLinkNote(Math.min(game.path.length - 1, 16));
 }
 
@@ -5537,31 +6263,50 @@ function applyLoopInteriorEffects(summary, clearSet, tripleKeys, stoneShatter) {
     spawnShockwave(middle.x, middle.y, "#45e08a", reach, 0.7, layout.cell * 0.22, 0.12);
   }
 
-  /* The big one. Every gem on the board, and the rings that sell it. */
-  if (summary.prisms.length > 0) {
+  /* The big one. Every gem on the board, and the rings that sell it. A
+     trapped chromatic goes one further and meets the level's goal on
+     the spot, whatever it asked for: a colour or score goal is simply
+     full, a stone goal is full and every stone has gone with the nova
+     anyway, and a draining board is empty so nothing links. */
+  if (summary.chromatics.length > 0) {
     everyGemOnBoard(clearSet);
     sweeps = true;
-    game.shake = Math.max(game.shake, 22);
-    playPrismNova();
+    game.goal.progress = game.goal.target;
+    showBurstToast("CHROMATIC NOVA", "#ffffff");
+    spawnNovaEffects(centre, middle, reach);
+  } else if (summary.prisms.length > 0) {
+    everyGemOnBoard(clearSet);
+    sweeps = true;
     showBurstToast("PRISM NOVA", "#ffffff");
-    startScreenFlash("#ffffff", 0.5);
-
-    spawnShockwave(middle.x, middle.y, "#ffffff", reach, 0.55, layout.cell * 0.5, 0);
-    for (let i = 0; i < GEM_COLOURS.length; i++) {
-      const colour = GEM_COLOURS[i].core;
-      spawnShockwave(middle.x, middle.y, colour, reach, 0.75, layout.cell * 0.34, 0.07 + i * 0.06);
-    }
-    spawnNovaSparks(centre.row, centre.col);
+    spawnNovaEffects(centre, middle, reach);
   }
 
   if (sweeps === false) return null;
   return centre;
 }
 
+/* The shake, the flash, the rings and the sparks of a nova. Shared by
+   the two specials that set one off. */
+function spawnNovaEffects(centre, middle, reach) {
+  game.shake = Math.max(game.shake, 22);
+  playPrismNova();
+  startScreenFlash("#ffffff", 0.5);
+
+  spawnShockwave(middle.x, middle.y, "#ffffff", reach, 0.55, layout.cell * 0.5, 0);
+  for (let i = 0; i < GEM_COLOURS.length; i++) {
+    const colour = GEM_COLOURS[i].core;
+    spawnShockwave(middle.x, middle.y, colour, reach, 0.75, layout.cell * 0.34, 0.07 + i * 0.06);
+  }
+  spawnNovaSparks(centre.row, centre.col);
+}
+
 function resolvePath() {
-  if (game.path.length < MIN_LINK) {
+  const rules = activeLinkRules();
+
+  if (game.path.length < rules.minLink) {
     game.path = [];
     game.pathColour = -1;
+    game.pathColours = [];
     game.loopClosed = false;
     return;
   }
@@ -5569,13 +6314,16 @@ function resolvePath() {
   const linkLength = game.path.length;
   const clearSet = new Map();
 
-  /* The last gem of a long link survives and gets upgraded. */
+  /* The last gem of a long link survives and gets upgraded. A closed
+     loop never forges; it pays out by sweeping the colour instead. */
   let upgradeSpot = null;
   let upgradeKind = "none";
 
-  if (game.loopClosed === false && linkLength >= BOMB_LINK) {
-    upgradeSpot = game.path[linkLength - 1];
-    upgradeKind = linkLength >= PRISM_LINK ? "prism" : "bomb";
+  if (game.loopClosed === false) {
+    upgradeKind = forgeKindForLink(linkLength, rules);
+    if (upgradeKind !== "none") {
+      upgradeSpot = game.path[linkLength - 1];
+    }
   }
 
   for (let i = 0; i < game.path.length; i++) {
@@ -5586,14 +6334,18 @@ function resolvePath() {
     addToClearSet(clearSet, spot.row, spot.col);
   }
 
-  /* Loop closed: sweep the whole colour off the board, then set off
-     anything the ring caught in the middle of it. */
+  /* Loop closed: sweep every colour the ring linked off the board, then
+     set off anything the ring caught in the middle of it. A ring with no
+     chromatic in it has one colour; a ring through one may have several. */
   const tripleBombKeys = new Set();
   const stoneShatter = new Map();
   let waveCentre = null;
+  const colours = readPathColours(game.path);
 
-  if (game.loopClosed === true && game.pathColour !== -1) {
-    everyCellOfColour(clearSet, game.pathColour);
+  if (game.loopClosed === true && colours.all.length > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(clearSet, colours.all[i]);
+    }
 
     const summary = loopInteriorSummary(game.path);
     if (loopCaughtSomething(summary) === true) {
@@ -5601,7 +6353,9 @@ function resolvePath() {
     }
   }
 
-  /* A prism caught in the link torches its colour as well. */
+  /* A chromatic caught in the link torches every colour the link held.
+     A prism torches its own, and with no chromatic beside it the link
+     has only the one. */
   let prismInLink = false;
   for (let i = 0; i < game.path.length; i++) {
     const spot = game.path[i];
@@ -5609,7 +6363,13 @@ function resolvePath() {
       prismInLink = true;
     }
   }
-  if (prismInLink === true && game.pathColour !== -1) {
+  if (colours.hasChromatic === true && colours.all.length > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(clearSet, colours.all[i]);
+    }
+    showBurstToast("CHROMATIC BLAST", "#ffffff");
+    playTone(988, 0.5, "sine", 0.15);
+  } else if (prismInLink === true && game.pathColour !== -1) {
     everyCellOfColour(clearSet, game.pathColour);
     showBurstToast("PRISM BLAST", "#ffffff");
     playTone(880, 0.5, "sine", 0.15);
@@ -5640,6 +6400,7 @@ function resolvePath() {
 
   game.path = [];
   game.pathColour = -1;
+  game.pathColours = [];
   game.loopClosed = false;
 
   mode.advanceHazards();
@@ -5658,7 +6419,10 @@ function forgeSpecial(row, col, special) {
   cell.scale = 1.6;
   spawnForgeRing(row, col);
 
-  if (special === "prism") {
+  if (special === "chromatic") {
+    showBurstToast("CHROMATIC FORGED", "#ffffff");
+    playTone(1318, 0.45, "sine", 0.16);
+  } else if (special === "prism") {
     showBurstToast("PRISM FORGED", "#ffffff");
     playTone(1046, 0.4, "sine", 0.16);
   } else {
@@ -5785,8 +6549,7 @@ function applyClear(clearSet, linkLength, bombStoneDamage, waveCentre) {
   }
 
   const centre = cleared[Math.floor(cleared.length / 2)];
-  const colourForText = game.pathColour === -1 ? 4 : game.pathColour;
-  spawnFloater(centre.row, centre.col, "+" + total, GEM_COLOURS[colourForText].rim);
+  spawnFloater(centre.row, centre.col, "+" + total, GEM_COLOURS[pathPaintColour()].rim);
 
   if (multiplier > 1) {
     spawnFloater(centre.row - 1, centre.col, "x" + multiplier, "#ffffff");
@@ -6216,71 +6979,89 @@ function boardIsSettled() {
    Solvability check
    ------------------------------------------------------------------ */
 
-/* Whether a legal link exists anywhere on the board.
+/* The first link of at least the length asked for, or null when the board
+   holds none. Walks out from every gem under exactly the rules extendPath
+   enforces, so a yes is a link the player could draw and a no means the
+   board is dead, at whatever minimum the mode has set.
 
-   Every three gem link has a middle gem touching the other two, so
-   asking the question of each gem in turn as the middle of one answers
-   it for the whole board.
+   This has to be exact rather than nearly right, because a mode where the
+   board drains ends its level on the answer. A yes that is not true leaves
+   the player sitting on a board they cannot play and cannot finish.
 
-   This has to be exact rather than nearly right, because a mode where
-   the board drains ends its level on the answer. A yes that is not true
-   leaves the player sitting on a board they cannot play and cannot
-   finish. */
-function hasAnyLink() {
+   At the standard minimum of three it visits at most a few thousand cells
+   on a full board, and it runs once per settled board. */
+function firstLinkOfLength(needed) {
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      if (couldBeMiddleOfALink(row, col) === true) return true;
+      const start = cellAt(row, col);
+      if (start.kind !== "gem") continue;
+      if (start.doomed === true) continue;
+
+      const path = [{ row: row, col: col }];
+      const used = new Set();
+      used.add(keyOf(row, col));
+
+      const startColour = colourAfterStep(-1, start);
+      const found = growLinkTo(path, used, startColour, needed);
+      if (found !== null) return found;
     }
   }
-  return false;
+  return null;
 }
 
-/* A prism carries no colour of its own and slots into a link of any, so
-   it counts toward every colour a neighbour could fix, and three prisms
-   together are a link that fixes on no colour at all. */
-function couldBeMiddleOfALink(row, col) {
-  const middle = cellAt(row, col);
-  if (middle.kind !== "gem") return false;
+/* The colour a link is on after stepping onto a cell: the first plain
+   gem fixes it, a prism leaves it alone, and a chromatic closes the
+   segment so the next plain gem opens another. The same rule
+   readPathColours applies to a whole path, one step at a time, for the
+   searches that walk paths they have not drawn. */
+function colourAfterStep(pathColour, cell) {
+  if (cell.special === "chromatic") return -1;
+  if (cell.special === "prism") return pathColour;
+  if (pathColour === -1) return cell.colour;
+  return pathColour;
+}
 
-  let prismNeighbours = 0;
-  const neighboursOfColour = [];
-  for (let colour = 0; colour < GEM_COLOURS.length; colour++) {
-    neighboursOfColour.push(0);
-  }
+/* Extends the path one gem at a time until it is long enough, backing out
+   of every dead end. The colour so far is passed down the same way
+   walkLink passes it. */
+function growLinkTo(path, used, pathColour, needed) {
+  if (path.length >= needed) return path.slice();
+
+  const head = path[path.length - 1];
 
   for (let dr = -1; dr <= 1; dr++) {
     for (let dc = -1; dc <= 1; dc++) {
       if (dr === 0 && dc === 0) continue;
 
-      const r = row + dr;
-      const c = col + dc;
-      if (insideBoard(r, c) === false) continue;
+      const row = head.row + dr;
+      const col = head.col + dc;
+      if (insideBoard(row, col) === false) continue;
 
-      const other = cellAt(r, c);
-      if (other.kind !== "gem") continue;
+      const cell = cellAt(row, col);
+      if (cell.kind !== "gem") continue;
+      if (cell.doomed === true) continue;
+      if (cellMatchesPath(cell, pathColour) === false) continue;
 
-      if (other.special === "prism") {
-        prismNeighbours++;
-      } else {
-        neighboursOfColour[other.colour]++;
-      }
+      const key = keyOf(row, col);
+      if (used.has(key) === true) continue;
+
+      path.push({ row: row, col: col });
+      used.add(key);
+
+      const found = growLinkTo(path, used, colourAfterStep(pathColour, cell), needed);
+      if (found !== null) return found;
+
+      path.pop();
+      used.delete(key);
     }
   }
 
-  /* An ordinary gem fixes the colour of the link, so both the gems
-     either side of it have to be that colour or a prism. */
-  if (middle.special !== "prism") {
-    return neighboursOfColour[middle.colour] + prismNeighbours >= 2;
-  }
+  return null;
+}
 
-  /* A prism in the middle takes the colour from whichever side has one,
-     so the two sides have to agree with each other. */
-  if (prismNeighbours >= 2) return true;
-
-  for (let colour = 0; colour < neighboursOfColour.length; colour++) {
-    if (neighboursOfColour[colour] + prismNeighbours >= 2) return true;
-  }
-  return false;
+/* Whether a legal link exists anywhere on the board. */
+function hasAnyLink() {
+  return firstLinkOfLength(activeLinkRules().minLink) !== null;
 }
 
 function ensureSolvableBoard() {
@@ -6526,7 +7307,9 @@ const HINT_GOAL_WEIGHT = 1400;
 const HINT_FINISHES_LEVEL = 2000;
 const HINT_LOOP_WITH_CATCH = 600;
 const HINT_LOOP_PLAIN = 300;
+const HINT_CHROMATIC_IN_LINK = 450;
 const HINT_PRISM_IN_LINK = 300;
+const HINT_FORGES_CHROMATIC = 320;
 const HINT_FORGES_PRISM = 260;
 const HINT_FORGES_BOMB = 150;
 const HINT_BOMB_IN_LINK = 60;
@@ -6551,17 +7334,14 @@ function scoreLinkMove(move) {
     score += HINT_LOOP_PLAIN;
   }
 
+  if (move.chromaticsInPath > 0) score += HINT_CHROMATIC_IN_LINK;
   if (move.prismsInPath > 0) score += HINT_PRISM_IN_LINK;
 
   /* Only an open link forges. A ring pays out by sweeping the colour
      instead, and leaves nothing behind on the board. */
-  if (move.closesLoop === false) {
-    if (move.path.length >= PRISM_LINK) {
-      score += HINT_FORGES_PRISM;
-    } else if (move.path.length >= BOMB_LINK) {
-      score += HINT_FORGES_BOMB;
-    }
-  }
+  if (move.forges === "chromatic") score += HINT_FORGES_CHROMATIC;
+  if (move.forges === "prism") score += HINT_FORGES_PRISM;
+  if (move.forges === "bomb") score += HINT_FORGES_BOMB;
 
   score += move.bombsInPath * HINT_BOMB_IN_LINK;
 
@@ -6582,6 +7362,7 @@ function scoreLinkMove(move) {
    loop or a forge says so. An ordinary three link gets no caption: the
    trail on the board already says everything there is to say. */
 function linkCaption(move) {
+  if (move.loopCatch === "chromatic") return "LOOP THE CHROMATIC";
   if (move.loopCatch === "prism") return "LOOP THE PRISM";
   if (move.loopCatch === "bomb") return "LOOP THE BOMB";
   if (move.loopCatch === "stone") return "LOOP THE STONE";
@@ -6592,10 +7373,12 @@ function linkCaption(move) {
   }
 
   if (move.bombsDetonated >= 2) return "CHAIN " + move.bombsDetonated + " BOMBS";
+  if (move.chromaticsInPath > 0) return "LINK THE CHROMATIC";
   if (move.prismsInPath > 0) return "LINK THE PRISM";
   if (move.bombsDetonated === 1) return "LINK THE BOMB";
-  if (move.path.length >= PRISM_LINK) return "LINK " + move.path.length + " TO FORGE A PRISM";
-  if (move.path.length >= BOMB_LINK) return "LINK " + move.path.length + " TO FORGE A BOMB";
+  if (move.forges === "chromatic") return "LINK " + move.path.length + " TO FORGE A CHROMATIC";
+  if (move.forges === "prism") return "LINK " + move.path.length + " TO FORGE A PRISM";
+  if (move.forges === "bomb") return "LINK " + move.path.length + " TO FORGE A BOMB";
 
   return "";
 }
@@ -6608,24 +7391,30 @@ function linkCaption(move) {
    The four interior effects reuse the same helpers resolvePath calls, so
    the biggest plays in the game are read exactly and not guessed at. */
 function describeLinkMove(path, closesLoop) {
-  let colour = -1;
+  const colours = readPathColours(path);
   let prismsInPath = 0;
+  let chromaticsInPath = 0;
   let bombsInPath = 0;
   let blightedInPath = 0;
 
   for (let i = 0; i < path.length; i++) {
     const cell = cellAt(path[i].row, path[i].col);
     if (cell.special === "prism") prismsInPath++;
+    if (cell.special === "chromatic") chromaticsInPath++;
     if (cell.special === "bomb") bombsInPath++;
     if (cell.blighted === true) blightedInPath++;
-    if (colour === -1 && cell.special !== "prism") colour = cell.colour;
   }
 
-  /* A link of five or more leaves its last gem standing as a bomb or a
-     prism, so that one is not part of the clear. A closed loop never
-     forges, so it never leaves one behind. */
+  /* A link long enough to forge leaves its last gem standing as the
+     special it forged, so that one is not part of the clear. A closed
+     loop never forges, so it never leaves one behind. */
+  let forges = "none";
+  if (closesLoop === false) {
+    forges = forgeKindForLink(path.length, activeLinkRules());
+  }
+
   let survivorKey = -1;
-  if (closesLoop === false && path.length >= BOMB_LINK) {
+  if (forges !== "none") {
     const last = path[path.length - 1];
     survivorKey = keyOf(last.row, last.col);
   }
@@ -6639,12 +7428,17 @@ function describeLinkMove(path, closesLoop) {
   const stoneShatter = new Map();
   let loopCatch = "none";
 
-  /* Closing a loop sweeps the colour, then sets off whatever the ring
-     walled in. A trapped bomb blasts three cells in every direction, a
-     trapped stone takes every stone with it, a trapped blight cures the
-     board and a trapped prism clears all of it. */
-  if (closesLoop === true && colour !== -1) {
-    everyCellOfColour(cleared, colour);
+  /* Closing a loop sweeps every colour the ring linked, then sets off
+     whatever the ring walled in. A trapped bomb blasts three cells in
+     every direction, a trapped stone takes every stone with it, a
+     trapped blight cures the board, and a trapped prism or chromatic
+     clears all of it. */
+  let finishesLevel = false;
+
+  if (closesLoop === true && colours.all.length > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(cleared, colours.all[i]);
+    }
 
     const summary = loopInteriorSummary(path);
 
@@ -6656,15 +7450,28 @@ function describeLinkMove(path, closesLoop) {
     if (summary.stones.length > 0) everyStoneOnBoard(stoneShatter);
     if (summary.blighted.length > 0) everyBlightedGem(cleared);
     if (summary.prisms.length > 0) everyGemOnBoard(cleared);
+    if (summary.chromatics.length > 0) {
+      everyGemOnBoard(cleared);
+      finishesLevel = true;
+    }
 
-    if (summary.prisms.length > 0) loopCatch = "prism";
+    if (summary.chromatics.length > 0) loopCatch = "chromatic";
+    else if (summary.prisms.length > 0) loopCatch = "prism";
     else if (summary.bombs.length > 0) loopCatch = "bomb";
     else if (summary.stones.length > 0) loopCatch = "stone";
     else if (summary.blighted.length > 0) loopCatch = "blight";
   }
 
-  /* A prism caught in the link torches its colour as well. */
-  if (prismsInPath > 0 && colour !== -1) everyCellOfColour(cleared, colour);
+  /* A chromatic caught in the link torches every colour the link held.
+     A prism torches its own, and with no chromatic beside it the link
+     has only the one. */
+  if (chromaticsInPath > 0) {
+    for (let i = 0; i < colours.all.length; i++) {
+      everyCellOfColour(cleared, colours.all[i]);
+    }
+  } else if (prismsInPath > 0 && colours.current !== -1) {
+    everyCellOfColour(cleared, colours.current);
+  }
 
   const blast = hintBlastExpansion(cleared, tripleKeys);
 
@@ -6682,10 +7489,21 @@ function describeLinkMove(path, closesLoop) {
   const clearedCells = [];
   cleared.forEach(function (spot) { clearedCells.push(spot); });
 
-  /* A link made only of prisms never fixes on a colour. It still clears
-     and still scores, and violet is what drawPath paints it, so the
-     hint paints it the same. */
-  const paintColour = colour === -1 ? 4 : colour;
+  /* A link made only of specials never fixes on a colour. It still
+     clears and still scores, and violet is what drawPath paints it, so
+     the hint paints it the same. A link that changed colour is painted
+     in the colour it was on at the end. */
+  let paintColour = 4;
+  if (colours.current !== -1) {
+    paintColour = colours.current;
+  } else if (colours.all.length > 0) {
+    paintColour = colours.all[colours.all.length - 1];
+  }
+
+  /* A trapped chromatic meets the goal outright, whatever the board's
+     clear would have counted toward it. */
+  let goalProgress = predictedGoalProgress(clearedCells, stoneDamage);
+  if (finishesLevel === true) goalProgress = goalRemaining();
 
   const move = {
     kind: "link",
@@ -6693,12 +7511,14 @@ function describeLinkMove(path, closesLoop) {
     colour: paintColour,
     closesLoop: closesLoop,
     loopCatch: loopCatch,
+    forges: forges,
     prismsInPath: prismsInPath,
+    chromaticsInPath: chromaticsInPath,
     bombsInPath: bombsInPath,
     blightedInPath: blightedInPath,
     bombsDetonated: blast.bombsDetonated,
     clearedCount: clearedCells.length,
-    goalProgress: predictedGoalProgress(clearedCells, stoneDamage),
+    goalProgress: goalProgress,
     score: 0,
     caption: ""
   };
@@ -6711,44 +7531,6 @@ function describeLinkMove(path, closesLoop) {
 /* ------------------------------------------------------------------
    Searching for a link
    ------------------------------------------------------------------ */
-
-/* Every ordinary gem with two linkable neighbours has a three link
-   running through it, and this finds one without searching at all.
-   hasAnyLink reads the board the same way to decide it is playable, so
-   running this first means the hint cannot come up empty on a board the
-   game has called playable.
-
-   Prisms are left to the search. One joins any colour, which makes the
-   link it belongs to a choice, and the search is where choices go. */
-function shortLinkThrough(row, col) {
-  const cell = cellAt(row, col);
-  if (cell.kind !== "gem") return null;
-  if (cell.special === "prism") return null;
-  if (cell.doomed === true) return null;
-
-  const matches = [];
-
-  for (let dr = -1; dr <= 1; dr++) {
-    for (let dc = -1; dc <= 1; dc++) {
-      if (dr === 0 && dc === 0) continue;
-
-      const r = row + dr;
-      const c = col + dc;
-      if (insideBoard(r, c) === false) continue;
-
-      const other = cellAt(r, c);
-      if (other.kind !== "gem") continue;
-      if (other.doomed === true) continue;
-      if (other.special !== "prism" && other.colour !== cell.colour) continue;
-
-      matches.push({ row: r, col: c });
-    }
-  }
-
-  if (matches.length < 2) return null;
-
-  return [matches[0], { row: row, col: col }, matches[1]];
-}
 
 /* A ring narrower than three cells either way cannot have walled
    anything in, which saves running the flood on most of them. */
@@ -6769,10 +7551,10 @@ function ringSpansThreeEachWay(path) {
 }
 
 /* Walks links out from the head under exactly the rules extendPath
-   enforces. It keeps the longest link it reaches and the first closed
-   loop it finds, which is enough: the search runs from every gem on the
-   board, so a region worth linking contributes its own best candidate
-   whichever cell the walk happened to start on. */
+   enforces. It keeps the longest link it reaches and the best scoring
+   closed loop it finds. The best, and never the first: a special that
+   joins any colour can be linked into a small ring before the ring
+   around it is tried, and the ring around it is the one worth showing. */
 function walkLink(path, used, pathColour, budget, found) {
   if (budget.left <= 0) return;
   if (path.length >= HINT_MAX_LINK) return;
@@ -6791,16 +7573,27 @@ function walkLink(path, used, pathColour, budget, found) {
       const cell = cellAt(row, col);
       if (cell.kind !== "gem") continue;
       if (cell.doomed === true) continue;
-      if (cellMatchesPath(cell, pathColour) === false) continue;
+      const matches = cellMatchesPath(cell, pathColour);
+      const isStart = row === start.row && col === start.col;
+      if (matches === false && isStart === false) continue;
 
-      /* Coming back to the gem the link started on closes a ring. */
+      /* Coming back to the gem the link started on closes a ring, under
+         the rules extendPath applies: the ring needs a colour to sweep,
+         and the first gem has to match unless a chromatic in the ring
+         has let the colour change. */
       if (row === start.row && col === start.col) {
-        if (found.loop !== null) continue;
+        if (activeMode().loopsEnabled === false) continue;
         if (path.length < 4) continue;
-        if (pathColour === -1) continue;
+        const colours = readPathColours(path);
+        if (colours.all.length === 0) continue;
+        if (cellMatchesPath(cell, pathColour) === false && colours.hasChromatic === false) continue;
         if (ringSpansThreeEachWay(path) === false) continue;
         if (loopEnclosesACell(path) === false) continue;
-        found.loop = path.slice();
+
+        const ringMove = describeLinkMove(path.slice(), true);
+        if (found.loopMove === null || ringMove.score > found.loopMove.score) {
+          found.loopMove = ringMove;
+        }
         continue;
       }
 
@@ -6813,11 +7606,9 @@ function walkLink(path, used, pathColour, budget, found) {
       path.push({ row: row, col: col });
       used.add(key);
 
-      /* The first non-prism gem fixes the colour of the whole link. */
-      let nextColour = pathColour;
-      if (nextColour === -1 && cell.special !== "prism") nextColour = cell.colour;
+      const nextColour = colourAfterStep(pathColour, cell);
 
-      if (path.length >= MIN_LINK) {
+      if (path.length >= activeLinkRules().minLink) {
         if (found.longest === null || path.length > found.longest.length) {
           found.longest = path.slice();
         }
@@ -6832,13 +7623,13 @@ function walkLink(path, used, pathColour, budget, found) {
 }
 
 function searchLinksFrom(startRow, startCol) {
-  const found = { longest: null, loop: null };
+  const found = { longest: null, loopMove: null };
 
   const start = cellAt(startRow, startCol);
   if (start.kind !== "gem") return found;
   if (start.doomed === true) return found;
 
-  const startColour = start.special === "prism" ? -1 : start.colour;
+  const startColour = colourAfterStep(-1, start);
   const path = [{ row: startRow, col: startCol }];
   const used = new Set();
   used.add(keyOf(startRow, startCol));
@@ -6870,14 +7661,17 @@ function findLinkMove() {
     }
   }
 
+  /* hasAnyLink reads the board with this same search to decide it is
+     playable, so taking its answer first means the hint cannot come up
+     empty on a board the game has called playable. */
+  const floor = firstLinkOfLength(activeLinkRules().minLink);
+  if (floor !== null) consider(describeLinkMove(floor, false));
+
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
-      const floor = shortLinkThrough(row, col);
-      if (floor !== null) consider(describeLinkMove(floor, false));
-
       const found = searchLinksFrom(row, col);
       if (found.longest !== null) consider(describeLinkMove(found.longest, false));
-      if (found.loop !== null) consider(describeLinkMove(found.loop, true));
+      if (found.loopMove !== null) consider(found.loopMove);
     }
   }
 
@@ -7229,11 +8023,15 @@ function goalReached() {
    top is a promise about its own budget, and only a mode with a budget
    can make one. */
 function hazardWarning(level) {
-  if (level === 3) return "The Blight starts creeping in from here.";
-  if (level === 4) return "Stones and blight together now.";
-  if (level === 6) return "The Blight spreads faster.";
-  if (level === 10) return "The Blight spreads every other move.";
-  if (level % 12 === 0) return "Stones are tougher from here.";
+  const hazards = activeHazards();
+  const hasBlight = hazards.maxBlightOnBoard > 0;
+  const hasStones = hazards.maxStones > 0;
+
+  if (level === 3 && hasBlight === true) return "The Blight starts creeping in from here.";
+  if (level === 4 && hasBlight === true && hasStones === true) return "Stones and blight together now.";
+  if (level === 6 && hasBlight === true) return "The Blight spreads faster.";
+  if (level === 10 && hasBlight === true) return "The Blight spreads every other move.";
+  if (level % 12 === 0 && hasStones === true) return "Stones are tougher from here.";
   return null;
 }
 
@@ -7299,7 +8097,30 @@ function completeLevel() {
   }
 
   game.blightCarry = countBlight();
+
+  /* Only where a fresh board is coming and the mode says the specials
+     on this one go with it. A mode that keeps its board carries
+     everything anyway. */
+  if (mode.rebuildsBoardEachLevel === true && mode.carriesSpecials === true) {
+    game.specialCarry = countSpecials();
+  }
+
   playFanfare();
+
+  /* A mode that shows no card goes straight on to the next level. The
+     level number in the HUD and the goal line change under the player,
+     so the one toast says which level this is now, and that a continue
+     came with it when one did. */
+  if (mode.showsLevelClearCard === false) {
+    const nextLevel = game.level + 1;
+    if (earned > 0) {
+      showToast("LEVEL " + nextLevel + ", CONTINUE EARNED", "#ffffff");
+    } else {
+      showToast("LEVEL " + nextLevel, "#ffffff");
+    }
+    advanceToNextLevel();
+    return;
+  }
 
   let body = "";
   if (bonus.amount > 0) {
@@ -7317,6 +8138,10 @@ function completeLevel() {
      carries on, the subtitle has already said so. */
   if (mode.rebuildsBoardEachLevel === true && game.blightCarry > 0) {
     body += "<div class='rule'><span class='pip'>&#9760;</span><span><b>" + game.blightCarry + "</b> blight follows you to the next level.</span></div>";
+  }
+  const carriedSpecials = game.specialCarry.bomb + game.specialCarry.prism + game.specialCarry.chromatic;
+  if (carriedSpecials > 0) {
+    body += "<div class='rule'><span class='pip'>&#9788;</span><span><b>" + carriedSpecials + "</b> special" + (carriedSpecials === 1 ? "" : "s") + " follow" + (carriedSpecials === 1 ? "s" : "") + " you to the next level.</span></div>";
   }
   body += "<div class='rule'><span class='pip'>&#9888;</span><span>" + mode.nextLevelWarning(game.level + 1) + "</span></div>";
 
@@ -7391,7 +8216,7 @@ function endRun(title, subtitle) {
     "<div class='rule'><span class='pip'>&#9733;</span><span>Close a loop to wipe a whole colour when the board gets crowded.</span></div>",
     "Play Again",
     function () {
-      startRun(game.modeId, game.difficulty);
+      startRun(game.modeId, game.difficulty, game.customRules);
       hideCard();
     },
     "Quit to Menu",
@@ -7598,12 +8423,13 @@ function saveGame() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 5,
+    version: 6,
     randomBackgroundId: BackgroundHandler.randomId(),
     rows: ROWS,
     cols: COLS,
     mode: game.modeId,
     difficulty: game.difficulty,
+    customRules: game.customRules,
     level: game.level,
     score: game.score,
     scoreAtLevelStart: game.scoreAtLevelStart,
@@ -7631,7 +8457,7 @@ function readSaveFor(modeId, difficulty) {
      the same way a save from a differently shaped board is. Said out
      loud, because a run vanishing off the mode select screen with no
      explanation is the worst way to meet it. */
-  if (payload.version !== 4 && payload.version !== 5) {
+  if (payload.version !== 4 && payload.version !== 5 && payload.version !== 6) {
     console.error("PRISM PURGE found a saved " + modeId + " game on " + difficulty +
       " at version " + payload.version + ", which this build cannot read. It has been " +
       "left alone and the mode will offer a new game.");
@@ -7648,12 +8474,31 @@ function readSaveFor(modeId, difficulty) {
     payload.randomBackgroundId = null;
   }
 
+  /* Version 5 predates Custom, so no version 5 run can be one, and the
+     rules it carries are none. */
+  if (payload.version === 5) {
+    payload.version = 6;
+    payload.customRules = null;
+  }
+
+  /* A Custom run is nothing without the rules it was begun on. */
+  if (payload.mode === "custom" && (payload.customRules === null || typeof payload.customRules !== "object")) {
+    console.error("PRISM PURGE found a saved Custom game on " + difficulty +
+      " with no rules on it. It has been left alone and the mode will offer a new game.");
+    return null;
+  }
+
   return payload;
 }
 
 function loadGame(payload) {
   game.modeId = payload.mode;
   game.difficulty = payload.difficulty;
+  game.customRules = payload.customRules;
+  if (game.modeId === "custom") {
+    applyCustomRules(game.customRules, "the rules the saved Custom run was begun on");
+  }
+  game.specialCarry = { bomb: 0, prism: 0, chromatic: 0 };
   game.bestScore = loadBest(payload.mode, payload.difficulty);
   buildItemBar();
   game.level = payload.level;
@@ -7667,6 +8512,7 @@ function loadGame(payload) {
   game.goal = payload.goal;
   game.path = [];
   game.pathColour = -1;
+  game.pathColours = [];
   game.loopClosed = false;
   game.aiming = "none";
   particles.length = 0;
@@ -7734,8 +8580,9 @@ function saveSettings() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 6,
+    version: 7,
     backgrounds: BackgroundHandler.preferences(),
+    customPicks: customPicks,
     sfxEnabled: sound.enabled,
     sfxVolume: sound.volume,
     musicEnabled: music.enabled,
@@ -7777,6 +8624,10 @@ function saveSettings() {
    Version 5 predates per-mode backgrounds. Earlier supported payloads
    keep the catalog's explicit Mode Default preferences for every mode.
 
+   Version 6 predates Custom, so its backgrounds carry no choice for it
+   and there are no picks to read: the fifth mode is on its default
+   background and the picks are the standard game.
+
    A payload under a version this build does not know is treated as
    absent, the same way an old save is. A payload under a version it
    does know is expected to hold the right shape, and is not quietly
@@ -7789,7 +8640,8 @@ function loadSettings() {
 
   const payload = JSON.parse(raw);
   if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 &&
-      payload.version !== 4 && payload.version !== 5 && payload.version !== 6) return;
+      payload.version !== 4 && payload.version !== 5 && payload.version !== 6 &&
+      payload.version !== 7) return;
 
   settingsWereStored = true;
 
@@ -7816,7 +8668,29 @@ function loadSettings() {
 
   tour.done = storedSwitch(payload.tourDone, "tourDone");
   if (payload.version === 5) return;
+
+  if (payload.version === 6) {
+    payload.backgrounds.custom = "default";
+  }
   BackgroundHandler.restorePreferences(payload.backgrounds);
+  if (payload.version === 6) return;
+
+  customPicks = storedCustomPicks(payload.customPicks, "customPicks");
+}
+
+/* A stored rules object is checked the way a run's is, field by field,
+   and copied so the stored object is never the one being edited. */
+function storedCustomPicks(value, fieldName) {
+  const isObject = value !== null && typeof value === "object";
+  const hasLinks = isObject === true && value.links !== null && typeof value.links === "object";
+
+  if (hasLinks === false) {
+    throw new Error("PRISM PURGE: stored setting '" + fieldName +
+      "' should be a Custom rules object and is " + JSON.stringify(value) + ".");
+  }
+
+  checkCustomRules(value, "stored setting '" + fieldName + "'");
+  return cloneCustomRules(value);
 }
 
 function storedGraphicsMode(value, fieldName) {
@@ -9546,6 +10420,9 @@ function drawGemMarks(cell, cx, cy, radius) {
   if (cell.special === "prism") {
     drawPrismMarks(cx, cy, radius);
   }
+  if (cell.special === "chromatic") {
+    drawChromaticMarks(cx, cy, radius, game.time * CHROMATIC_SPIN_RATE);
+  }
   if (cell.blighted === true && cell.blightShow > 0) {
     drawBlight(cx, cy, radius, cell.blightShow);
   }
@@ -9867,6 +10744,40 @@ function drawPrismMarks(cx, cy, radius) {
   ctx.beginPath();
   ctx.arc(cx, cy, radius * 0.22, 0, Math.PI * 2);
   ctx.fillStyle = "#ffffff";
+  ctx.fill();
+}
+
+/* A colour wheel: twelve wedges round the hue circle, a lighter ring of
+   the same twelve inside them, and a white core. It turns more slowly
+   than the prism's dots. The angle is an argument so a still picture of
+   one can be drawn at a fixed turn. */
+const CHROMATIC_SPIN_RATE = 0.9;
+const CHROMATIC_WEDGES = 12;
+
+function drawChromaticMarks(cx, cy, radius, spin) {
+  const wedgeAngle = (Math.PI * 2) / CHROMATIC_WEDGES;
+
+  for (let i = 0; i < CHROMATIC_WEDGES; i++) {
+    const hue = i * (360 / CHROMATIC_WEDGES);
+    const from = spin + i * wedgeAngle;
+    const to = from + wedgeAngle;
+
+    drawWheelWedge(cx, cy, radius * 0.30, radius * 0.64, from, to, "hsl(" + hue + ", 90%, 55%)");
+    drawWheelWedge(cx, cy, radius * 0.16, radius * 0.30, from, to, "hsl(" + hue + ", 90%, 78%)");
+  }
+
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius * 0.16, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.fill();
+}
+
+function drawWheelWedge(cx, cy, innerRadius, outerRadius, from, to, colour) {
+  ctx.beginPath();
+  ctx.arc(cx, cy, outerRadius, from, to);
+  ctx.arc(cx, cy, innerRadius, to, from, true);
+  ctx.closePath();
+  ctx.fillStyle = colour;
   ctx.fill();
 }
 
@@ -10195,10 +11106,10 @@ function drawCells() {
 
 function drawLoopInteriorGlow() {
   if (game.loopClosed === false) return;
-  if (game.pathColour === -1) return;
+  if (pathHasAColour() === false) return;
 
   const summary = loopInteriorSummary(game.path);
-  const palette = GEM_COLOURS[game.pathColour];
+  const palette = GEM_COLOURS[pathPaintColour()];
   const pulse = 0.5 + Math.sin(game.time * 9) * 0.5;
 
   let alpha = 0.14 + pulse * 0.12;
@@ -10228,7 +11139,7 @@ function drawLoopInteriorGlow() {
    exactly the case worth showing off. */
 function drawLoopCatchMarks() {
   if (game.loopClosed === false) return;
-  if (game.pathColour === -1) return;
+  if (pathHasAColour() === false) return;
 
   const summary = loopInteriorSummary(game.path);
   if (loopCaughtSomething(summary) === false) return;
@@ -10257,6 +11168,11 @@ function drawLoopCatchMarks() {
     haloed.push({ spot: summary.prisms[i], colour: "#ffffff", radius: 0.44 });
   }
   if (summary.prisms.length > 0) lines.push({ text: "WHOLE BOARD", colour: "#ffffff" });
+
+  for (let i = 0; i < summary.chromatics.length; i++) {
+    haloed.push({ spot: summary.chromatics[i], colour: "#ffffff", radius: 0.44 });
+  }
+  if (summary.chromatics.length > 0) lines.push({ text: "LEVEL CLEAR", colour: "#ffffff" });
 
   const spin = game.time * 3;
   const pulse = 1 + Math.sin(game.time * 11) * 0.08;
@@ -10328,42 +11244,85 @@ function drawLoopCatchLegend(summary, lines) {
   }
 }
 
+/* The line is drawn one segment at a time, each in its own colour, so a
+   link that changed colour at a chromatic visibly does. A chromatic
+   belongs to the segment before it and the one after, which is what
+   keeps the line continuous through it. A closed ring is white all the
+   way round, as it always was. */
 function drawPath() {
   if (game.path.length === 0) return;
-
-  const colourIndex = game.pathColour === -1 ? 4 : game.pathColour;
-  const palette = GEM_COLOURS[colourIndex];
 
   ctx.save();
   ctx.lineWidth = layout.cell * 0.16;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.shadowColor = palette.glow;
   ctx.shadowBlur = layout.cell * 0.4;
-  ctx.strokeStyle = game.loopClosed === true ? "#ffffff" : palette.rim;
   ctx.globalAlpha = 0.9;
 
-  ctx.beginPath();
+  let segmentStart = 0;
+  let segmentColour = -1;
+
   for (let i = 0; i < game.path.length; i++) {
+    const cell = cellAt(game.path[i].row, game.path[i].col);
+
+    if (segmentColour === -1 && cell.special === "none") {
+      segmentColour = cell.colour;
+    }
+
+    const closesSegment = cell.special === "chromatic" && i > segmentStart;
+    const isLast = i === game.path.length - 1;
+
+    if (closesSegment === true || isLast === true) {
+      drawPathSegment(segmentStart, i, segmentColour);
+      segmentStart = i;
+      segmentColour = -1;
+    }
+  }
+
+  if (game.loopClosed === true) {
+    const head = game.path[game.path.length - 1];
+    const first = game.path[0];
+    const headCentre = cellCentre(head.row, head.col);
+    const firstCentre = cellCentre(first.row, first.col);
+    ctx.strokeStyle = "#ffffff";
+    ctx.shadowColor = "#ffffff";
+    ctx.beginPath();
+    ctx.moveTo(headCentre.x, headCentre.y + cellAt(head.row, head.col).offsetY);
+    ctx.lineTo(firstCentre.x, firstCentre.y);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  drawPathRings();
+  drawPathCounter();
+  drawLoopCatchMarks();
+}
+
+/* One stretch of the line, from one path index to another, in one
+   colour. A segment with no colour fixed yet is painted violet, which is
+   what a link made only of specials has always been painted. */
+function drawPathSegment(fromIndex, toIndex, segmentColour) {
+  const palette = GEM_COLOURS[segmentColour === -1 ? 4 : segmentColour];
+
+  ctx.shadowColor = palette.glow;
+  ctx.strokeStyle = game.loopClosed === true ? "#ffffff" : palette.rim;
+
+  ctx.beginPath();
+  for (let i = fromIndex; i <= toIndex; i++) {
     const spot = game.path[i];
     const centre = cellCentre(spot.row, spot.col);
     const cell = cellAt(spot.row, spot.col);
     const y = centre.y + cell.offsetY;
-    if (i === 0) {
+    if (i === fromIndex) {
       ctx.moveTo(centre.x, y);
     } else {
       ctx.lineTo(centre.x, y);
     }
   }
-
-  if (game.loopClosed === true) {
-    const first = game.path[0];
-    const centre = cellCentre(first.row, first.col);
-    ctx.lineTo(centre.x, centre.y);
-  }
   ctx.stroke();
-  ctx.restore();
+}
 
+function drawPathRings() {
   /* Rings around every linked gem. */
   ctx.save();
   ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
@@ -10379,7 +11338,9 @@ function drawPath() {
     ctx.stroke();
   }
   ctx.restore();
+}
 
+function drawPathCounter() {
   /* Link counter floating by the head of the path. */
   if (game.path.length >= 2) {
     const head = game.path[game.path.length - 1];
@@ -10388,7 +11349,7 @@ function drawPath() {
     ctx.font = "bold " + Math.round(layout.cell * 0.34) + "px Trebuchet MS, sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = game.path.length >= MIN_LINK ? "#ffffff" : "rgba(255,255,255,0.5)";
+    ctx.fillStyle = game.path.length >= activeLinkRules().minLink ? "#ffffff" : "rgba(255,255,255,0.5)";
     ctx.strokeStyle = "rgba(0,0,0,0.7)";
     ctx.lineWidth = 3;
     const label = String(game.path.length);
@@ -10397,8 +11358,6 @@ function drawPath() {
     ctx.fillText(label, centre.x, ty);
     ctx.restore();
   }
-
-  drawLoopCatchMarks();
 }
 
 /* ------------------------------------------------------------------
@@ -11245,20 +12204,78 @@ cardBtnAlt.addEventListener("click", function () {
    top of this, and nothing here may describe a piece that some mode does
    not have. Stones, blight and the third charge item all failed that
    test and moved out. */
-function howToPlayHtml() {
-  return "" +
-  "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>3 or more</b> to burst them.</span></div>" +
-  "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>" +
-  "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>5</b> to forge a <b>Bomb</b>, link <b>7</b> to forge a <b>Prism</b> that torches a whole colour.</span></div>" +
-  "<div class='rule'><span class='pip'>&#9678;</span><span>Loop <b>around</b> something without linking it and it goes off far harder. A bomb blasts <b>three cells</b> in every direction, and a Prism clears the <b>whole board</b>.</span></div>" +
+/* The rules every mode shares, printed from the link rules handed in so
+   the numbers are the ones in play. The two loop lines are printed only
+   where loops are on, which for every fixed mode is always. */
+function howToPlayHtml(linkRules, loopsEnabled) {
+  let text = "";
+  text += "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>" + linkRules.minLink + " or more</b> to burst them.</span></div>";
+  if (loopsEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>";
+  }
+  text += forgeRulesHtml(linkRules, loopsEnabled);
+  if (loopsEnabled === true) {
+    text += loopAroundRuleHtml(linkRules);
+  }
+  return text +
   "<div class='rule'><span class='pip'>&#9878;</span><span>Bursting fills your <b>charge</b>. The row along the bottom of the screen is what it buys.</span></div>";
 }
 
-/* Stones and blight, for the modes that have them. */
+/* What a link forges, naming only the specials the rules have on, and
+   what a loop does with a chromatic only where loops are on. */
+function forgeRulesHtml(linkRules, loopsEnabled) {
+  let text = "";
+
+  if (linkRules.bombEnabled === true && linkRules.prismEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>" + linkRules.bombLink + "</b> to forge a <b>Bomb</b>, link <b>" + linkRules.prismLink + "</b> to forge a <b>Prism</b> that torches a whole colour.</span></div>";
+  } else if (linkRules.bombEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>" + linkRules.bombLink + "</b> to forge a <b>Bomb</b>.</span></div>";
+  } else if (linkRules.prismEnabled === true) {
+    text += "<div class='rule'><span class='pip'>&#10039;</span><span>Link <b>" + linkRules.prismLink + "</b> to forge a <b>Prism</b> that torches a whole colour.</span></div>";
+  }
+
+  if (linkRules.chromaticEnabled === true) {
+    let chromaticLine = "Link <b>" + linkRules.chromaticLink + "</b> to forge a <b>Chromatic</b>. It joins any colour, and the link can change colour on the far side of it.";
+    if (loopsEnabled === true) {
+      chromaticLine += " Close a loop through one and every colour you linked is purged.";
+    }
+    text += "<div class='rule'><span class='pip'>&#9788;</span><span>" + chromaticLine + "</span></div>";
+  }
+
+  return text;
+}
+
+/* What looping around a special does, naming the chromatic only where
+   the rules can produce one. */
+function loopAroundRuleHtml(linkRules) {
+  let ending = "and a Prism clears the <b>whole board</b>.";
+  if (linkRules.chromaticEnabled === true) {
+    ending = "a Prism clears the <b>whole board</b>, and a Chromatic clears the <b>level</b>.";
+  }
+  return "<div class='rule'><span class='pip'>&#9678;</span><span>Loop <b>around</b> something without linking it and it goes off far harder. A bomb blasts <b>three cells</b> in every direction, " + ending + "</span></div>";
+}
+
+/* Stones and blight, for the modes that have them. Custom prints each
+   on its own, only where it is on, and leaves out what a loop does to
+   them where loops are off. */
 function hazardRulesHtml() {
-  return "" +
-  "<div class='rule'><span class='pip'>&#9632;</span><span><b>Stones</b> crack when a gem bursts beside them and take a full hit from any bomb blast. Loop around one and every stone on the board goes with it.</span></div>" +
-  "<div class='rule'><span class='pip'>&#9760;</span><span>The <b>Blight</b> creeps in from the early levels and follows you between them. Link a blighted gem to <b>cure</b> it, or loop around one to cure the whole board. Let it take the board and the level is over.</span></div>";
+  return stoneRuleHtml(true) + blightRuleHtml(true);
+}
+
+function stoneRuleHtml(loopsEnabled) {
+  let line = "<b>Stones</b> crack when a gem bursts beside them and take a full hit from any bomb blast.";
+  if (loopsEnabled === true) {
+    line += " Loop around one and every stone on the board goes with it.";
+  }
+  return "<div class='rule'><span class='pip'>&#9632;</span><span>" + line + "</span></div>";
+}
+
+function blightRuleHtml(loopsEnabled) {
+  let cure = "Link a blighted gem to <b>cure</b> it.";
+  if (loopsEnabled === true) {
+    cure = "Link a blighted gem to <b>cure</b> it, or loop around one to cure the whole board.";
+  }
+  return "<div class='rule'><span class='pip'>&#9760;</span><span>The <b>Blight</b> creeps in from the early levels and follows you between them. " + cure + " Let it take the board and the level is over.</span></div>";
 }
 
 /* The continue every mode has except the one where replaying a level
@@ -11268,7 +12285,16 @@ function retryContinueRuleHtml() {
 }
 
 function classicRulesHtml() {
-  return howToPlayHtml() + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+    classicOwnRulesHtml(CLASSIC_HAZARDS.normal, STANDARD_LINK_RULES);
+}
+
+/* The lines that are Classic's alone, which Custom prints under the
+   shared rules when it plays on the Classic base. Every mode's own lines
+   take the hazards and link rules in play, because a line that names a
+   hazard or a link length has to be true under Custom too. */
+function classicOwnRulesHtml(hazards, linkRules) {
+  return "" +
     "<div class='rule'><span class='pip'>&#8679;</span><span><b>+2 Moves</b> is the third thing charge buys, and the one the other modes swap out.</span></div>" +
     retryContinueRuleHtml();
 }
@@ -11486,7 +12512,17 @@ function showModeStart(modeId) {
 
   modeStartTitle.textContent = mode.name;
   modeStartSub.textContent = mode.blurb;
-  modeStartRules.innerHTML = mode.rulesHtml();
+
+  /* Custom's body is the rules editor. Every other mode prints its
+     rules. The foot below is the same for all five. */
+  if (modeId === "custom") {
+    modeStartRules.innerHTML = "";
+    modeStartRules.appendChild(customEditor);
+    applyCustomRules(customPicks, "the Custom picks");
+    refreshCustomEditor();
+  } else {
+    modeStartRules.innerHTML = mode.rulesHtml();
+  }
 
   const art = modeTileFor(modeId, MODE_TILE_START_WIDTH);
   art.classList.add("modeStartArt");
@@ -11546,6 +12582,377 @@ function refreshModeStartButtons() {
     ", level " + saved.level;
   modeContinue.classList.remove("hidden");
   modeNewGame.className = "screenBtn";
+}
+
+/* =====================================================================
+   CustomSetup
+   Owns: the rules editor on Custom's start screen, and keeping
+   customPicks, the Custom entry and the summary line in step with it.
+   Stays out of: what the rules mean in play, which GameModes owns, and
+   the rest of the start screen, which Screens owns.
+
+   One row per rule. A change writes the pick, re-applies the picks to the
+   Custom entry so the summary and rules text read them, refreshes every
+   control (a pick can change what another is allowed), and saves settings
+   so the picks are there next session.
+   ===================================================================== */
+
+/* The editor is built once and moved into the start screen's body when
+   Custom is shown. A handle per control, so refreshing reads as a list of
+   what changes rather than a walk of the DOM. */
+const customEditor = document.createElement("div");
+customEditor.className = "ruleRows";
+customEditor.id = "customEditor";
+
+const customControls = {
+  baseButtons: [],
+  baseNote: null,
+  blightToggle: null,
+  blightNote: null,
+  stonesToggle: null,
+  stonesNote: null,
+  loopsToggle: null,
+  loopsNote: null,
+  carryToggle: null,
+  carryNote: null,
+  minLinkStepper: null,
+  bombToggle: null,
+  bombStepper: null,
+  bombNote: null,
+  prismToggle: null,
+  prismStepper: null,
+  prismNote: null,
+  chromaticToggle: null,
+  chromaticStepper: null,
+  chromaticNote: null
+};
+
+/* Called after every change. The picks are the truth; everything on the
+   screen is read back from them. */
+function customPickChanged() {
+  applyCustomRules(customPicks, "the Custom picks");
+  refreshCustomEditor();
+  refreshDifficultyRow();
+  saveSettings();
+}
+
+function makeRuleRow(labelText, stacked) {
+  const row = document.createElement("div");
+  row.className = stacked === true ? "ruleRow stacked" : "ruleRow";
+
+  const label = document.createElement("div");
+  label.className = "ruleLabel";
+  label.textContent = labelText;
+  row.appendChild(label);
+
+  const controls = document.createElement("div");
+  controls.className = stacked === true ? "pickRow" : "ruleControls";
+  row.appendChild(controls);
+
+  customEditor.appendChild(row);
+  return controls;
+}
+
+function makeRuleNote() {
+  const note = document.createElement("p");
+  note.className = "ruleNote";
+  customEditor.appendChild(note);
+  return note;
+}
+
+/* A pick button reading On or Off. */
+function makeToggle(parent, onPress) {
+  const button = document.createElement("button");
+  button.className = "pickBtn";
+  button.addEventListener("click", function () {
+    ensureAudio();
+    onPress();
+  });
+  parent.appendChild(button);
+  return button;
+}
+
+function refreshToggle(button, isOn, isDisabled) {
+  button.textContent = isOn === true ? "On" : "Off";
+  button.disabled = isDisabled === true;
+  if (isOn === true) {
+    button.classList.add("picked");
+  } else {
+    button.classList.remove("picked");
+  }
+}
+
+/* A minus, the number and a plus. The window it may move in is worked
+   out on every refresh, because the tiers either side of it can move. */
+function makeStepper(parent, onChange) {
+  const stepper = document.createElement("div");
+  stepper.className = "stepper";
+
+  const minus = document.createElement("button");
+  minus.className = "pickBtn";
+  minus.textContent = "\u2212";
+  minus.addEventListener("click", function () {
+    ensureAudio();
+    onChange(-1);
+  });
+  stepper.appendChild(minus);
+
+  const value = document.createElement("span");
+  value.className = "stepperValue";
+  stepper.appendChild(value);
+
+  const plus = document.createElement("button");
+  plus.className = "pickBtn";
+  plus.textContent = "+";
+  plus.addEventListener("click", function () {
+    ensureAudio();
+    onChange(1);
+  });
+  stepper.appendChild(plus);
+
+  parent.appendChild(stepper);
+  return { minus: minus, value: value, plus: plus };
+}
+
+function refreshStepper(stepper, current, lowest, highest, isDisabled) {
+  stepper.value.textContent = String(current);
+  stepper.minus.disabled = isDisabled === true || current <= lowest;
+  stepper.plus.disabled = isDisabled === true || current >= highest;
+}
+
+/* The lengths a tier may sit at without breaking the order: above the
+   enabled tier before it (or the minimum link), and below the enabled
+   tier after it (or the ceiling). Empty when there is no room, which
+   the toggle refuses and the note explains. */
+function tierWindow(tierName) {
+  const links = customPicks.links;
+  const order = ["bombLink", "prismLink", "chromaticLink"];
+  const enabledFlag = { bombLink: "bombEnabled", prismLink: "prismEnabled", chromaticLink: "chromaticEnabled" };
+  const index = order.indexOf(tierName);
+
+  let lowest = links.minLink + 1;
+  for (let i = index - 1; i >= 0; i--) {
+    if (links[enabledFlag[order[i]]] === true) {
+      lowest = links[order[i]] + 1;
+      break;
+    }
+  }
+
+  let highest = CUSTOM_THRESHOLD_HIGHEST;
+  for (let i = index + 1; i < order.length; i++) {
+    if (links[enabledFlag[order[i]]] === true) {
+      highest = links[order[i]] - 1;
+      break;
+    }
+  }
+
+  return { lowest: Math.max(lowest, CUSTOM_THRESHOLD_LOWEST), highest: highest };
+}
+
+/* The minimum link may rise as far as one below the first enabled tier. */
+function minLinkWindow() {
+  const links = customPicks.links;
+  let highest = CUSTOM_MIN_LINK_HIGHEST;
+  const tiers = enabledLinkTiers(links);
+  if (tiers.length > 0) {
+    highest = Math.min(highest, tiers[0].length - 1);
+  }
+  return { lowest: CUSTOM_MIN_LINK_LOWEST, highest: highest };
+}
+
+/* Switching a tier on puts it at the nearest length its window allows.
+   With no room at all the switch is refused and the note says why. */
+function toggleTier(enabledField, lengthField) {
+  const links = customPicks.links;
+
+  if (links[enabledField] === true) {
+    links[enabledField] = false;
+    customPickChanged();
+    return;
+  }
+
+  const window = tierWindow(lengthField);
+  if (window.lowest > window.highest) {
+    refreshCustomEditor();
+    return;
+  }
+
+  links[enabledField] = true;
+  links[lengthField] = Math.max(window.lowest, Math.min(links[lengthField], window.highest));
+  customPickChanged();
+}
+
+function stepTier(lengthField, direction) {
+  const links = customPicks.links;
+  const window = tierWindow(lengthField);
+  const next = links[lengthField] + direction;
+  if (next < window.lowest || next > window.highest) return;
+  links[lengthField] = next;
+  customPickChanged();
+}
+
+function stepMinLink(direction) {
+  const window = minLinkWindow();
+  const next = customPicks.links.minLink + direction;
+  if (next < window.lowest || next > window.highest) return;
+  customPicks.links.minLink = next;
+  customPickChanged();
+}
+
+/* Moving onto the Elimination base switches both hazards off, because it
+   cannot play with either. Nothing is switched back on when moving away,
+   so a player who turned blight off keeps it off. */
+function pickBaseMode(baseModeId) {
+  customPicks.baseModeId = baseModeId;
+  if (baseModeId === "elimination") {
+    customPicks.blightEnabled = false;
+    customPicks.stonesEnabled = false;
+  }
+  customPickChanged();
+}
+
+function buildCustomEditor() {
+  const baseRow = makeRuleRow("Game type", true);
+  for (let i = 0; i < CUSTOM_BASE_MODE_IDS.length; i++) {
+    const baseModeId = CUSTOM_BASE_MODE_IDS[i];
+    const button = document.createElement("button");
+    button.className = "pickBtn";
+    button.textContent = modeById(baseModeId).name;
+    button.addEventListener("click", function () {
+      ensureAudio();
+      pickBaseMode(baseModeId);
+    });
+    baseRow.appendChild(button);
+    customControls.baseButtons.push({ id: baseModeId, button: button });
+  }
+  customControls.baseNote = makeRuleNote();
+
+  customControls.blightToggle = makeToggle(makeRuleRow("Blight", false), function () {
+    customPicks.blightEnabled = customPicks.blightEnabled === false;
+    customPickChanged();
+  });
+  customControls.blightNote = makeRuleNote();
+
+  customControls.stonesToggle = makeToggle(makeRuleRow("Stones", false), function () {
+    customPicks.stonesEnabled = customPicks.stonesEnabled === false;
+    customPickChanged();
+  });
+  customControls.stonesNote = makeRuleNote();
+
+  customControls.loopsToggle = makeToggle(makeRuleRow("Loops", false), function () {
+    customPicks.loopsEnabled = customPicks.loopsEnabled === false;
+    customPickChanged();
+  });
+  customControls.loopsNote = makeRuleNote();
+
+  customControls.carryToggle = makeToggle(makeRuleRow("Specials carry over", false), function () {
+    customPicks.specialsCarryOver = customPicks.specialsCarryOver === false;
+    customPickChanged();
+  });
+  customControls.carryNote = makeRuleNote();
+
+  customControls.minLinkStepper = makeStepper(makeRuleRow("Minimum link", false), stepMinLink);
+
+  const bombRow = makeRuleRow("Bomb", false);
+  customControls.bombToggle = makeToggle(bombRow, function () { toggleTier("bombEnabled", "bombLink"); });
+  customControls.bombStepper = makeStepper(bombRow, function (direction) { stepTier("bombLink", direction); });
+  customControls.bombNote = makeRuleNote();
+
+  const prismRow = makeRuleRow("Prism", false);
+  customControls.prismToggle = makeToggle(prismRow, function () { toggleTier("prismEnabled", "prismLink"); });
+  customControls.prismStepper = makeStepper(prismRow, function (direction) { stepTier("prismLink", direction); });
+  customControls.prismNote = makeRuleNote();
+
+  const chromaticRow = makeRuleRow("Chromatic", false);
+  customControls.chromaticToggle = makeToggle(chromaticRow, function () { toggleTier("chromaticEnabled", "chromaticLink"); });
+  customControls.chromaticStepper = makeStepper(chromaticRow, function (direction) { stepTier("chromaticLink", direction); });
+  customControls.chromaticNote = makeRuleNote();
+}
+
+/* Every control, read back from the picks. */
+function refreshCustomEditor() {
+  const picks = customPicks;
+  const links = picks.links;
+  const onElimination = picks.baseModeId === "elimination";
+
+  for (let i = 0; i < customControls.baseButtons.length; i++) {
+    const entry = customControls.baseButtons[i];
+    if (entry.id === picks.baseModeId) {
+      entry.button.classList.add("picked");
+    } else {
+      entry.button.classList.remove("picked");
+    }
+  }
+  customControls.baseNote.textContent = modeById(picks.baseModeId).blurb;
+
+  refreshToggle(customControls.blightToggle, picks.blightEnabled, onElimination);
+  if (onElimination === true) {
+    customControls.blightNote.textContent = "Elimination plays without blight.";
+  } else {
+    customControls.blightNote.textContent = "";
+  }
+
+  refreshToggle(customControls.stonesToggle, picks.stonesEnabled, onElimination);
+  if (onElimination === true) {
+    customControls.stonesNote.textContent = "Elimination plays without stones.";
+  } else if (picks.stonesEnabled === false) {
+    customControls.stonesNote.textContent = "Stone goals are skipped.";
+  } else {
+    customControls.stonesNote.textContent = "";
+  }
+
+  refreshToggle(customControls.loopsToggle, picks.loopsEnabled, false);
+  if (picks.loopsEnabled === false) {
+    customControls.loopsNote.textContent = "Crossing back to the first gem does nothing.";
+  } else {
+    customControls.loopsNote.textContent = "";
+  }
+
+  refreshToggle(customControls.carryToggle, picks.specialsCarryOver, false);
+  if (picks.baseModeId === "endless") {
+    customControls.carryNote.textContent = "The board carries on anyway.";
+  } else {
+    customControls.carryNote.textContent = "Bombs, prisms and chromatics on the board follow you onto the next one.";
+  }
+
+  const minWindow = minLinkWindow();
+  refreshStepper(customControls.minLinkStepper, links.minLink, minWindow.lowest, minWindow.highest, false);
+
+  refreshTierRow(customControls.bombToggle, customControls.bombStepper, customControls.bombNote,
+    "bombEnabled", "bombLink", "a bomb");
+  refreshTierRow(customControls.prismToggle, customControls.prismStepper, customControls.prismNote,
+    "prismEnabled", "prismLink", "a prism");
+  refreshTierRow(customControls.chromaticToggle, customControls.chromaticStepper, customControls.chromaticNote,
+    "chromaticEnabled", "chromaticLink", "a chromatic");
+
+  customControls.baseNote.classList.remove("hidden");
+  const notes = [customControls.blightNote, customControls.stonesNote, customControls.loopsNote,
+    customControls.carryNote, customControls.bombNote, customControls.prismNote, customControls.chromaticNote];
+  for (let i = 0; i < notes.length; i++) {
+    if (notes[i].textContent === "") {
+      notes[i].classList.add("hidden");
+    } else {
+      notes[i].classList.remove("hidden");
+    }
+  }
+}
+
+/* A tier's toggle, its stepper, and a note when the toggle cannot be
+   switched on because the tiers either side leave it no room. */
+function refreshTierRow(toggle, stepper, note, enabledField, lengthField, what) {
+  const links = customPicks.links;
+  const window = tierWindow(lengthField);
+  const isOn = links[enabledField] === true;
+  const noRoom = isOn === false && window.lowest > window.highest;
+
+  refreshToggle(toggle, isOn, noRoom);
+  refreshStepper(stepper, links[lengthField], window.lowest, window.highest, isOn === false);
+
+  if (noRoom === true) {
+    note.textContent = "No room for " + what + " between the tiers either side of it.";
+  } else {
+    note.textContent = "";
+  }
 }
 
 /* =====================================================================
@@ -12051,7 +13458,7 @@ function showHelpScreen(returnTo) {
     helpRules.innerHTML = mode.rulesHtml();
   } else {
     helpSubtitle.textContent = "PRISM PURGE";
-    helpRules.innerHTML = howToPlayHtml();
+    helpRules.innerHTML = howToPlayHtml(STANDARD_LINK_RULES, true);
   }
 
   helpRules.scrollTop = 0;
@@ -12076,7 +13483,9 @@ function quitToMainMenu() {
 }
 
 function enterRun(modeId, difficulty) {
-  startRun(modeId, difficulty);
+  let customRules = null;
+  if (modeId === "custom") customRules = customPicks;
+  startRun(modeId, difficulty, customRules);
   showScreen("playing");
 }
 
@@ -12649,6 +14058,7 @@ BackgroundHandler.init();
 applyGraphicsMode();
 refreshSettingsPage();
 buildDifficultyRow();
+buildCustomEditor();
 measureHudHeights();
 measureStage();
 showMainMenu();
