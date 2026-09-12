@@ -7361,6 +7361,20 @@ function scoreLinkMove(move) {
 /* One short line naming the mechanic, so a hint that is showing off a
    loop or a forge says so. An ordinary three link gets no caption: the
    trail on the board already says everything there is to say. */
+/* The colours a ring sweeps, named in the order they were linked: one
+   for an ordinary ring, and every colour the ring changed to through a
+   chromatic. */
+function colourList(path) {
+  const names = [];
+  const colours = readPathColours(path).all;
+  for (let i = 0; i < colours.length; i++) {
+    const name = GEM_COLOURS[colours[i]].name.toUpperCase();
+    if (names.indexOf(name) === -1) names.push(name);
+  }
+  if (names.length === 1) return names[0];
+  return names.slice(0, names.length - 1).join(", ") + " AND " + names[names.length - 1];
+}
+
 function linkCaption(move) {
   if (move.loopCatch === "chromatic") return "LOOP THE CHROMATIC";
   if (move.loopCatch === "prism") return "LOOP THE PRISM";
@@ -7369,7 +7383,7 @@ function linkCaption(move) {
   if (move.loopCatch === "blight") return "LOOP THE BLIGHT";
 
   if (move.closesLoop === true) {
-    return "LOOP TO CLEAR EVERY " + GEM_COLOURS[move.colour].name.toUpperCase();
+    return "LOOP TO CLEAR EVERY " + colourList(move.path);
   }
 
   if (move.bombsDetonated >= 2) return "CHAIN " + move.bombsDetonated + " BOMBS";
@@ -11133,6 +11147,18 @@ function drawLoopInteriorGlow() {
   ctx.globalAlpha = 1;
 }
 
+/* How far the line travels from one path index to another, so a dash
+   pattern can carry on across segments as if they were one line. */
+function pathLengthBetween(path, fromIndex, toIndex) {
+  let length = 0;
+  for (let i = fromIndex + 1; i <= toIndex; i++) {
+    const a = cellCentre(path[i - 1].row, path[i - 1].col);
+    const b = cellCentre(path[i].row, path[i].col);
+    length += Math.hypot(b.x - a.x, b.y - a.y);
+  }
+  return length;
+}
+
 /* Every special caught in the middle gets a halo, and the effects are
    listed once above the ring. Labelling every cell put two words on
    top of each other the moment two specials sat side by side, which is
@@ -11249,34 +11275,66 @@ function drawLoopCatchLegend(summary, lines) {
    belongs to the segment before it and the one after, which is what
    keeps the line continuous through it. A closed ring is white all the
    way round, as it always was. */
+/* The HD link is an energy line: a wide soft halo in the segment's glow,
+   the coloured body over it, a thin white hot core down the middle, and
+   beads of light travelling from the first gem to the head. Standard
+   keeps the plain body alone. Widths are fractions of a cell; the bead
+   speed is cells per second. The Godot game carries the same numbers. */
+const ENERGY_HALO_WIDTH = 0.34;
+const ENERGY_BODY_WIDTH = 0.16;
+const ENERGY_CORE_WIDTH = 0.055;
+const ENERGY_HALO_ALPHA = 0.22;
+const ENERGY_FLICKER = 0.06;
+const ENERGY_FLICKER_RATE = 21;
+const ENERGY_BEAD_RADIUS = 0.11;
+const ENERGY_BEAD_COUNT = 3;
+const ENERGY_BEAD_SPEED = 3.2;
+
 function drawPath() {
   if (game.path.length === 0) return;
 
+  const segments = pathSegmentsOf(game.path);
+  const isEnergy = graphics.mode === GRAPHICS_HD;
+
   ctx.save();
-  ctx.lineWidth = layout.cell * 0.16;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
+
+  if (isEnergy === true) {
+    const flicker = Math.sin(game.time * ENERGY_FLICKER_RATE) * ENERGY_FLICKER;
+    ctx.lineWidth = layout.cell * ENERGY_HALO_WIDTH;
+    ctx.shadowBlur = layout.cell * 0.7;
+    ctx.globalAlpha = ENERGY_HALO_ALPHA + flicker;
+    drawPathPass(segments, "halo");
+  }
+
+  ctx.lineWidth = layout.cell * ENERGY_BODY_WIDTH;
   ctx.shadowBlur = layout.cell * 0.4;
   ctx.globalAlpha = 0.9;
+  drawPathPass(segments, "body");
 
-  let segmentStart = 0;
-  let segmentColour = -1;
+  if (isEnergy === true) {
+    ctx.lineWidth = layout.cell * ENERGY_CORE_WIDTH;
+    ctx.shadowBlur = layout.cell * 0.15;
+    ctx.globalAlpha = 0.85;
+    drawPathPass(segments, "core");
+  }
+  ctx.restore();
 
-  for (let i = 0; i < game.path.length; i++) {
-    const cell = cellAt(game.path[i].row, game.path[i].col);
+  if (isEnergy === true) {
+    drawPathBeads(segments);
+  }
 
-    if (segmentColour === -1 && cell.special === "none") {
-      segmentColour = cell.colour;
-    }
+  drawPathRings();
+  drawPathCounter();
+  drawLoopCatchMarks();
+}
 
-    const closesSegment = cell.special === "chromatic" && i > segmentStart;
-    const isLast = i === game.path.length - 1;
-
-    if (closesSegment === true || isLast === true) {
-      drawPathSegment(segmentStart, i, segmentColour);
-      segmentStart = i;
-      segmentColour = -1;
-    }
+/* One pass over every segment, and the line back to the first gem when
+   the ring is closed. */
+function drawPathPass(segments, paint) {
+  for (let i = 0; i < segments.length; i++) {
+    drawPathSegment(game.path, segments[i].from, segments[i].to, segments[i].colour, true, paint);
   }
 
   if (game.loopClosed === true) {
@@ -11291,28 +11349,145 @@ function drawPath() {
     ctx.lineTo(firstCentre.x, firstCentre.y);
     ctx.stroke();
   }
-  ctx.restore();
+}
 
-  drawPathRings();
-  drawPathCounter();
-  drawLoopCatchMarks();
+/* The live link's polyline, gem by gem, following the gems as they fall,
+   with the line back to the first gem when the ring is closed. Each point
+   carries the colour of the segment the stretch after it belongs to. */
+function livePathPoints(segments) {
+  const points = [];
+
+  for (let i = 0; i < game.path.length; i++) {
+    const spot = game.path[i];
+    const centre = cellCentre(spot.row, spot.col);
+    let colour = 4;
+    for (let s = 0; s < segments.length; s++) {
+      if (i >= segments[s].from && i < segments[s].to) {
+        colour = segments[s].colour === -1 ? 4 : segments[s].colour;
+      }
+    }
+    if (i === game.path.length - 1 && segments.length > 0) {
+      const last = segments[segments.length - 1];
+      colour = last.colour === -1 ? 4 : last.colour;
+    }
+    points.push({ x: centre.x, y: centre.y + cellAt(spot.row, spot.col).offsetY, colour: colour });
+  }
+
+  if (game.loopClosed === true && points.length > 0) {
+    points.push({ x: points[0].x, y: points[0].y, colour: points[points.length - 1].colour });
+  }
+
+  return points;
+}
+
+/* Beads of light running along the line, spaced evenly and moving from
+   the first gem towards the head, so the line reads as carrying charge
+   rather than sitting still. */
+function drawPathBeads(segments) {
+  const points = livePathPoints(segments);
+  if (points.length < 2) return;
+
+  let total = 0;
+  for (let i = 1; i < points.length; i++) {
+    total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  if (total <= 0) return;
+
+  const radius = layout.cell * ENERGY_BEAD_RADIUS;
+  const travelled = game.time * ENERGY_BEAD_SPEED * layout.cell;
+
+  ctx.save();
+  for (let bead = 0; bead < ENERGY_BEAD_COUNT; bead++) {
+    const distance = (travelled + bead * total / ENERGY_BEAD_COUNT) % total;
+    const spot = pointAlongPolyline(points, distance);
+    const palette = GEM_COLOURS[spot.colour];
+
+    const glow = ctx.createRadialGradient(spot.x, spot.y, 0, spot.x, spot.y, radius);
+    glow.addColorStop(0, "#ffffff");
+    glow.addColorStop(0.55, palette.rim);
+    glow.addColorStop(1, "rgba(255, 255, 255, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(spot.x, spot.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* Where a distance along the polyline lands, and the colour of the
+   stretch it landed on. */
+function pointAlongPolyline(points, distance) {
+  let remaining = distance;
+  for (let i = 1; i < points.length; i++) {
+    const stretch = Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+    if (remaining <= stretch || i === points.length - 1) {
+      const fraction = stretch === 0 ? 0 : Math.min(1, remaining / stretch);
+      return {
+        x: points[i - 1].x + (points[i].x - points[i - 1].x) * fraction,
+        y: points[i - 1].y + (points[i].y - points[i - 1].y) * fraction,
+        colour: points[i - 1].colour
+      };
+    }
+    remaining -= stretch;
+  }
+  return { x: points[0].x, y: points[0].y, colour: points[0].colour };
+}
+
+/* A path split at every chromatic into runs of one colour, as index
+   ranges into the path. A chromatic belongs to the segment before it and
+   the one after, which is what keeps the line continuous through it. A
+   segment with no colour fixed yet is -1, painted violet, which is what a
+   link made only of specials has always been painted. The live link and
+   the hint both paint from this. */
+function pathSegmentsOf(path) {
+  const segments = [];
+  let segmentStart = 0;
+  let segmentColour = -1;
+
+  for (let i = 0; i < path.length; i++) {
+    const cell = cellAt(path[i].row, path[i].col);
+
+    if (segmentColour === -1 && cell.special === "none") {
+      segmentColour = cell.colour;
+    }
+
+    const closesSegment = cell.special === "chromatic" && i > segmentStart;
+    const isLast = i === path.length - 1;
+
+    if (closesSegment === true || isLast === true) {
+      segments.push({ from: segmentStart, to: i, colour: segmentColour });
+      segmentStart = i;
+      segmentColour = -1;
+    }
+  }
+
+  return segments;
 }
 
 /* One stretch of the line, from one path index to another, in one
-   colour. A segment with no colour fixed yet is painted violet, which is
-   what a link made only of specials has always been painted. */
-function drawPathSegment(fromIndex, toIndex, segmentColour) {
+   colour. The live link follows its gems as they fall; a hint sits on
+   the cells. paint says which layer of the energy line this is: the
+   halo takes the glow colour, the body the rim, and the core is white.
+   A closed ring's body is white all the way round, as it always was. */
+function drawPathSegment(path, fromIndex, toIndex, segmentColour, followsCells, paint) {
   const palette = GEM_COLOURS[segmentColour === -1 ? 4 : segmentColour];
 
   ctx.shadowColor = palette.glow;
-  ctx.strokeStyle = game.loopClosed === true ? "#ffffff" : palette.rim;
+  if (paint === "halo") {
+    ctx.strokeStyle = palette.glow;
+  } else if (paint === "core") {
+    ctx.strokeStyle = "#ffffff";
+    ctx.shadowColor = "#ffffff";
+  } else {
+    ctx.strokeStyle = game.loopClosed === true && followsCells === true ? "#ffffff" : palette.rim;
+  }
 
   ctx.beginPath();
   for (let i = fromIndex; i <= toIndex; i++) {
-    const spot = game.path[i];
+    const spot = path[i];
     const centre = cellCentre(spot.row, spot.col);
-    const cell = cellAt(spot.row, spot.col);
-    const y = centre.y + cell.offsetY;
+    let y = centre.y;
+    if (followsCells === true) y += cellAt(spot.row, spot.col).offsetY;
     if (i === fromIndex) {
       ctx.moveTo(centre.x, y);
     } else {
@@ -11388,32 +11563,42 @@ function drawLinkHint(move) {
   const palette = GEM_COLOURS[move.colour];
   const pulse = 0.55 + Math.sin(game.time * 3.4) * 0.2;
 
-  /* The trail, crawling forwards so the direction to drag is obvious. */
+  /* The trail, crawling forwards so the direction to drag is obvious.
+     Painted the way the live link is, one colour per segment, so a link
+     that changes colour at a chromatic is shown changing colour and never
+     as one colour laid over gems of another. The dash pattern is carried
+     on from segment to segment so it reads as one crawling line. */
   ctx.save();
-  ctx.setLineDash([layout.cell * 0.2, layout.cell * 0.16]);
-  ctx.lineDashOffset = -game.time * layout.cell * 0.6;
   ctx.lineWidth = layout.cell * 0.13;
   ctx.lineJoin = "round";
   ctx.lineCap = "round";
-  ctx.strokeStyle = palette.rim;
-  ctx.shadowColor = palette.glow;
   ctx.shadowBlur = layout.cell * 0.35;
   ctx.globalAlpha = pulse;
 
-  ctx.beginPath();
-  for (let i = 0; i < move.path.length; i++) {
-    const centre = cellCentre(move.path[i].row, move.path[i].col);
-    if (i === 0) {
-      ctx.moveTo(centre.x, centre.y);
-    } else {
-      ctx.lineTo(centre.x, centre.y);
-    }
+  const segments = pathSegmentsOf(move.path);
+  let travelled = 0;
+  for (let i = 0; i < segments.length; i++) {
+    ctx.setLineDash([layout.cell * 0.2, layout.cell * 0.16]);
+    ctx.lineDashOffset = -game.time * layout.cell * 0.6 - travelled;
+    drawPathSegment(move.path, segments[i].from, segments[i].to, segments[i].colour, false, "body");
+    travelled += pathLengthBetween(move.path, segments[i].from, segments[i].to);
   }
+
+  /* A ring closes back to its first gem in the colour of its last segment. */
   if (move.closesLoop === true) {
+    const last = segments[segments.length - 1];
+    const head = cellCentre(move.path[move.path.length - 1].row, move.path[move.path.length - 1].col);
     const first = cellCentre(move.path[0].row, move.path[0].col);
+    const closingPalette = GEM_COLOURS[last.colour === -1 ? 4 : last.colour];
+    ctx.setLineDash([layout.cell * 0.2, layout.cell * 0.16]);
+    ctx.lineDashOffset = -game.time * layout.cell * 0.6 - travelled;
+    ctx.shadowColor = closingPalette.glow;
+    ctx.strokeStyle = closingPalette.rim;
+    ctx.beginPath();
+    ctx.moveTo(head.x, head.y);
     ctx.lineTo(first.x, first.y);
+    ctx.stroke();
   }
-  ctx.stroke();
   ctx.restore();
 
   /* A ring on every gem in the link. */
