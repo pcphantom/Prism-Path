@@ -680,8 +680,8 @@
      it off the line above. */
   #shimmerToggle { margin-top: 9px; }
 
-  /* Standard has no shimmer to switch, so the button goes quiet. This is
-     the only disabled button in the game. */
+  /* Standard has no shimmer to switch, and a device with nothing to
+     vibrate has no haptics to switch, so those buttons go quiet. */
   .settingGroup .menuItem:disabled { opacity: 0.38; cursor: default; }
 
   input[type="range"] {
@@ -1787,6 +1787,11 @@
             </div>
           </div>
 
+          <div class="settingGroup" id="hapticGroup">
+            <button class="menuItem" id="hapticToggle">Haptics: On</button>
+            <p class="settingNote" id="hapticNote"></p>
+          </div>
+
           <button class="menuItem" id="settingsBack">Back</button>
         </div>
 
@@ -2392,6 +2397,8 @@ const sfxSlider = document.getElementById("sfxSlider");
 const sfxReadout = document.getElementById("sfxReadout");
 const musicGroup = document.getElementById("musicGroup");
 const musicToggle = document.getElementById("musicToggle");
+const hapticToggle = document.getElementById("hapticToggle");
+const hapticNote = document.getElementById("hapticNote");
 const musicSlider = document.getElementById("musicSlider");
 const musicReadout = document.getElementById("musicReadout");
 const menuFull = document.getElementById("menuFull");
@@ -2462,6 +2469,59 @@ const sound = {
   enabled: true,
   volume: 1
 };
+
+/* =====================================================================
+   HapticsHandler
+   Owns: the haptics setting, whether this device can vibrate at all,
+   and every pattern the game plays through the phone.
+   Stays out of: sound, drawing, and deciding when a moment deserves a
+   buzz, which the code that plays the sound for that moment says.
+
+   Every pattern is milliseconds on, off, on, and the Godot game carries
+   the same numbers. A phone that cannot vibrate is a real case: the
+   setting shows as unavailable and the tour skips the question.
+   ===================================================================== */
+
+const haptics = {
+  enabled: true
+};
+
+const HAPTIC_TICK = [8];
+const HAPTIC_LOOP = [30, 40, 60];
+const HAPTIC_LOOP_ARMED = [40, 30, 40, 30, 90];
+const HAPTIC_BOMB = [60];
+const HAPTIC_TRIPLE = [80, 40, 120];
+const HAPTIC_FORGE_BOMB = [40];
+const HAPTIC_FORGE_PRISM = [30, 30, 50];
+const HAPTIC_FORGE_CHROMATIC = [30, 30, 30, 30, 90];
+const HAPTIC_SWEEP = [50, 30, 50];
+const HAPTIC_NOVA = [80, 40, 120, 40, 200];
+const HAPTIC_STONE_CRACK = [15];
+const HAPTIC_BLIGHT = [20, 40, 20];
+const HAPTIC_ITEM = [25];
+const HAPTIC_LEVEL_CLEAR = [60, 60, 60, 60, 120];
+const HAPTIC_LEVEL_FAILED = [220];
+const HAPTIC_SAMPLE = [40];
+
+/* A burst buzzes for longer the more it takes, up to a cap. */
+const HAPTIC_BURST_BASE = 25;
+const HAPTIC_BURST_PER_GEM = 5;
+const HAPTIC_BURST_CAP = 120;
+
+function hapticsAreAvailable() {
+  return typeof navigator.vibrate === "function";
+}
+
+function playHaptic(pattern) {
+  if (haptics.enabled === false) return;
+  if (hapticsAreAvailable() === false) return;
+  navigator.vibrate(pattern);
+}
+
+function playHapticBurst(gemCount) {
+  const length = Math.min(HAPTIC_BURST_CAP, HAPTIC_BURST_BASE + gemCount * HAPTIC_BURST_PER_GEM);
+  playHaptic([length]);
+}
 
 function ensureAudio() {
   if (sound.ctx === null) {
@@ -5481,6 +5541,7 @@ function spreadBlight() {
   cellAt(pick.row, pick.col).blightShow = 1;
   spawnBlightPuff(pick.row, pick.col);
   playTone(90, 0.3, "sawtooth", 0.09);
+  playHaptic(HAPTIC_BLIGHT);
 }
 
 function advanceBlight() {
@@ -5621,6 +5682,7 @@ function updateBlightCrawls(dt) {
     if (crawl.crawlSoundPlayed === false && crawl.age >= BLIGHT_SET_SECONDS) {
       crawl.crawlSoundPlayed = true;
       playBlightCrawl();
+      playHaptic(HAPTIC_BLIGHT);
     }
 
     /* Grit shed along the way, so the trail reads as something dragging
@@ -5999,6 +6061,7 @@ function beginPath(row, col) {
   syncPathColours();
 
   playLinkNote(0);
+  playHaptic(HAPTIC_TICK);
 }
 
 function extendPath(row, col) {
@@ -6015,6 +6078,7 @@ function extendPath(row, col) {
     if (head.row === row && head.col === col) {
       game.loopClosed = false;
       playTone(220, 0.08, "sine", 0.08);
+      playHaptic(HAPTIC_TICK);
     }
     return;
   }
@@ -6031,6 +6095,7 @@ function extendPath(row, col) {
       game.path.pop();
       syncPathColours();
       playTone(220, 0.08, "sine", 0.08);
+      playHaptic(HAPTIC_TICK);
       return;
     }
   }
@@ -6065,10 +6130,13 @@ function extendPath(row, col) {
       if (loopCaughtSomething(summary) === true) {
         game.shake = Math.max(game.shake, 10);
         playLoopArmed();
+        playHaptic(HAPTIC_LOOP_ARMED);
         showBurstToast(loopCatchLabel(summary), "#ffffff");
       } else if (colours.hasChromatic === true) {
+        playHaptic(HAPTIC_LOOP);
         showBurstToast("CHROMATIC LOOP", "#ffffff");
       } else {
+        playHaptic(HAPTIC_LOOP);
         showBurstToast("LOOP!", GEM_COLOURS[pathPaintColour()].core);
       }
     }
@@ -6081,6 +6149,7 @@ function extendPath(row, col) {
   game.path.push(candidate);
   syncPathColours();
   playLinkNote(Math.min(game.path.length - 1, 16));
+  playHaptic(HAPTIC_TICK);
 }
 
 /* ------------------------------------------------------------------
@@ -6136,10 +6205,12 @@ function expandBombs(set, tripleKeys) {
       spawnTripleExplosion(spot.row, spot.col);
       game.shake = Math.max(game.shake, 17);
       playTripleBlast();
+      playHaptic(HAPTIC_TRIPLE);
     } else {
       spawnExplosion(spot.row, spot.col);
       game.shake = Math.max(game.shake, 9);
       playNoiseHit(0.28);
+      playHaptic(HAPTIC_BOMB);
     }
 
     for (let dr = -radius; dr <= radius; dr++) {
@@ -6249,6 +6320,7 @@ function applyLoopInteriorEffects(summary, clearSet, tripleKeys, stoneShatter) {
     sweeps = true;
     game.shake = Math.max(game.shake, 14);
     playStonesShatter();
+    playHaptic(HAPTIC_SWEEP);
     showBurstToast("STONES SHATTERED", "#cfc7e6");
     spawnShockwave(middle.x, middle.y, "#9a92b5", reach, 0.65, layout.cell * 0.34, 0);
   }
@@ -6258,6 +6330,7 @@ function applyLoopInteriorEffects(summary, clearSet, tripleKeys, stoneShatter) {
     sweeps = true;
     game.shake = Math.max(game.shake, 12);
     playBlightPurge();
+    playHaptic(HAPTIC_SWEEP);
     showBurstToast("BLIGHT PURGED", "#45e08a");
     spawnShockwave(middle.x, middle.y, "#b04dff", reach, 0.6, layout.cell * 0.3, 0);
     spawnShockwave(middle.x, middle.y, "#45e08a", reach, 0.7, layout.cell * 0.22, 0.12);
@@ -6290,6 +6363,7 @@ function applyLoopInteriorEffects(summary, clearSet, tripleKeys, stoneShatter) {
 function spawnNovaEffects(centre, middle, reach) {
   game.shake = Math.max(game.shake, 22);
   playPrismNova();
+  playHaptic(HAPTIC_NOVA);
   startScreenFlash("#ffffff", 0.5);
 
   spawnShockwave(middle.x, middle.y, "#ffffff", reach, 0.55, layout.cell * 0.5, 0);
@@ -6369,10 +6443,12 @@ function resolvePath() {
     }
     showBurstToast("CHROMATIC BLAST", "#ffffff");
     playTone(988, 0.5, "sine", 0.15);
+    playHaptic(HAPTIC_SWEEP);
   } else if (prismInLink === true && game.pathColour !== -1) {
     everyCellOfColour(clearSet, game.pathColour);
     showBurstToast("PRISM BLAST", "#ffffff");
     playTone(880, 0.5, "sine", 0.15);
+    playHaptic(HAPTIC_SWEEP);
   }
 
   const bombStoneDamage = expandBombs(clearSet, tripleBombKeys);
@@ -6422,12 +6498,15 @@ function forgeSpecial(row, col, special) {
   if (special === "chromatic") {
     showBurstToast("CHROMATIC FORGED", "#ffffff");
     playTone(1318, 0.45, "sine", 0.16);
+    playHaptic(HAPTIC_FORGE_CHROMATIC);
   } else if (special === "prism") {
     showBurstToast("PRISM FORGED", "#ffffff");
     playTone(1046, 0.4, "sine", 0.16);
+    playHaptic(HAPTIC_FORGE_PRISM);
   } else {
     showBurstToast("BOMB FORGED", "#ffab35");
     playTone(160, 0.35, "square", 0.13);
+    playHaptic(HAPTIC_FORGE_BOMB);
   }
 }
 
@@ -6569,6 +6648,7 @@ function applyClear(clearSet, linkLength, bombStoneDamage, waveCentre) {
     stone.hp -= amount;
     game.shake = Math.max(game.shake, 3);
     playNoiseHit(0.12);
+    playHaptic(HAPTIC_STONE_CRACK);
 
     if (stone.hp <= 0) {
       const delay = burstDelayFor(waveCentre, row, col);
@@ -6593,6 +6673,7 @@ function applyClear(clearSet, linkLength, bombStoneDamage, waveCentre) {
   game.charge = Math.min(CHARGE_MAX, game.charge + cleared.length);
   game.shake = Math.max(game.shake, Math.min(12, 2 + cleared.length * 0.5));
   playShatter(gemsCommitted);
+  playHapticBurst(gemsCommitted);
 
   game.phase = "bursting";
   game.burstTimer = BURST_SECONDS + longestDelay;
@@ -6669,8 +6750,10 @@ function selectItem(id) {
 
 /* Items are paid for after they resolve, because a clear feeds the
    meter and would otherwise hand part of the cost straight back. */
+/* Every item passes through here, so this is where firing one is felt. */
 function spendCharge(id) {
   game.charge = Math.max(0, game.charge - itemById(id).cost);
+  playHaptic(HAPTIC_ITEM);
 }
 
 function shuffleInPlace(list) {
@@ -8120,6 +8203,7 @@ function completeLevel() {
   }
 
   playFanfare();
+  playHaptic(HAPTIC_LEVEL_CLEAR);
 
   /* A mode that shows no card goes straight on to the next level. The
      level number in the HUD and the goal line change under the player,
@@ -8177,6 +8261,7 @@ function completeLevel() {
 function failLevel(title, subtitle) {
   game.phase = "over";
   playFailure();
+  playHaptic(HAPTIC_LEVEL_FAILED);
 
   if (game.continues > 0) {
     const mode = activeMode();
@@ -8594,9 +8679,10 @@ function saveSettings() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 7,
+    version: 8,
     backgrounds: BackgroundHandler.preferences(),
     customPicks: customPicks,
+    hapticsEnabled: haptics.enabled,
     sfxEnabled: sound.enabled,
     sfxVolume: sound.volume,
     musicEnabled: music.enabled,
@@ -8642,6 +8728,9 @@ function saveSettings() {
    and there are no picks to read: the fifth mode is on its default
    background and the picks are the standard game.
 
+   Version 7 predates haptics, so haptics keep their own default, which
+   is on.
+
    A payload under a version this build does not know is treated as
    absent, the same way an old save is. A payload under a version it
    does know is expected to hold the right shape, and is not quietly
@@ -8655,7 +8744,7 @@ function loadSettings() {
   const payload = JSON.parse(raw);
   if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 &&
       payload.version !== 4 && payload.version !== 5 && payload.version !== 6 &&
-      payload.version !== 7) return;
+      payload.version !== 7 && payload.version !== 8) return;
 
   settingsWereStored = true;
 
@@ -8690,6 +8779,9 @@ function loadSettings() {
   if (payload.version === 6) return;
 
   customPicks = storedCustomPicks(payload.customPicks, "customPicks");
+  if (payload.version === 7) return;
+
+  haptics.enabled = storedSwitch(payload.hapticsEnabled, "hapticsEnabled");
 }
 
 /* A stored rules object is checked the way a run's is, field by field,
@@ -11279,16 +11371,31 @@ function drawLoopCatchLegend(summary, lines) {
    the coloured body over it, a thin white hot core down the middle, and
    beads of light travelling from the first gem to the head. Standard
    keeps the plain body alone. Widths are fractions of a cell; the bead
-   speed is cells per second. The Godot game carries the same numbers. */
+   speed is cells per second. The Godot game carries the same numbers,
+   apart from the two blurs, which are each renderer's own: this one is
+   a canvas shadow and that one is a mask blurred at half resolution. */
 const ENERGY_HALO_WIDTH = 0.34;
 const ENERGY_BODY_WIDTH = 0.16;
 const ENERGY_CORE_WIDTH = 0.055;
 const ENERGY_HALO_ALPHA = 0.22;
 const ENERGY_FLICKER = 0.06;
 const ENERGY_FLICKER_RATE = 21;
+const ENERGY_HALO_BLUR = 0.7;
 const ENERGY_BEAD_RADIUS = 0.11;
 const ENERGY_BEAD_COUNT = 3;
 const ENERGY_BEAD_SPEED = 3.2;
+
+/* With the ring closed the line is holding a charge: the halo widens,
+   blooms further, takes the gem's own colour in place of its glow and
+   pulses; the core thickens; twice the beads run at twice the speed. */
+const ENERGY_LOOP_HALO_WIDTH = 0.5;
+const ENERGY_LOOP_HALO_ALPHA = 0.42;
+const ENERGY_LOOP_HALO_BLUR = 1.1;
+const ENERGY_LOOP_PULSE = 0.1;
+const ENERGY_LOOP_PULSE_RATE = 9;
+const ENERGY_LOOP_CORE_WIDTH = 0.08;
+const ENERGY_LOOP_BEAD_COUNT = 6;
+const ENERGY_LOOP_BEAD_SPEED = 6.4;
 
 function drawPath() {
   if (game.path.length === 0) return;
@@ -11302,9 +11409,16 @@ function drawPath() {
 
   if (isEnergy === true) {
     const flicker = Math.sin(game.time * ENERGY_FLICKER_RATE) * ENERGY_FLICKER;
-    ctx.lineWidth = layout.cell * ENERGY_HALO_WIDTH;
-    ctx.shadowBlur = layout.cell * 0.7;
-    ctx.globalAlpha = ENERGY_HALO_ALPHA + flicker;
+    if (game.loopClosed === true) {
+      const pulse = Math.sin(game.time * ENERGY_LOOP_PULSE_RATE) * ENERGY_LOOP_PULSE;
+      ctx.lineWidth = layout.cell * ENERGY_LOOP_HALO_WIDTH;
+      ctx.globalAlpha = ENERGY_LOOP_HALO_ALPHA + pulse + flicker;
+      ctx.shadowBlur = layout.cell * ENERGY_LOOP_HALO_BLUR;
+    } else {
+      ctx.lineWidth = layout.cell * ENERGY_HALO_WIDTH;
+      ctx.globalAlpha = ENERGY_HALO_ALPHA + flicker;
+      ctx.shadowBlur = layout.cell * ENERGY_HALO_BLUR;
+    }
     drawPathPass(segments, "halo");
   }
 
@@ -11314,7 +11428,7 @@ function drawPath() {
   drawPathPass(segments, "body");
 
   if (isEnergy === true) {
-    ctx.lineWidth = layout.cell * ENERGY_CORE_WIDTH;
+    ctx.lineWidth = layout.cell * (game.loopClosed === true ? ENERGY_LOOP_CORE_WIDTH : ENERGY_CORE_WIDTH);
     ctx.shadowBlur = layout.cell * 0.15;
     ctx.globalAlpha = 0.85;
     drawPathPass(segments, "core");
@@ -11394,11 +11508,13 @@ function drawPathBeads(segments) {
   if (total <= 0) return;
 
   const radius = layout.cell * ENERGY_BEAD_RADIUS;
-  const travelled = game.time * ENERGY_BEAD_SPEED * layout.cell;
+  const beadCount = game.loopClosed === true ? ENERGY_LOOP_BEAD_COUNT : ENERGY_BEAD_COUNT;
+  const beadSpeed = game.loopClosed === true ? ENERGY_LOOP_BEAD_SPEED : ENERGY_BEAD_SPEED;
+  const travelled = game.time * beadSpeed * layout.cell;
 
   ctx.save();
-  for (let bead = 0; bead < ENERGY_BEAD_COUNT; bead++) {
-    const distance = (travelled + bead * total / ENERGY_BEAD_COUNT) % total;
+  for (let bead = 0; bead < beadCount; bead++) {
+    const distance = (travelled + bead * total / beadCount) % total;
     const spot = pointAlongPolyline(points, distance);
     const palette = GEM_COLOURS[spot.colour];
 
@@ -11474,7 +11590,7 @@ function drawPathSegment(path, fromIndex, toIndex, segmentColour, followsCells, 
 
   ctx.shadowColor = palette.glow;
   if (paint === "halo") {
-    ctx.strokeStyle = palette.glow;
+    ctx.strokeStyle = game.loopClosed === true && followsCells === true ? palette.core : palette.glow;
   } else if (paint === "core") {
     ctx.strokeStyle = "#ffffff";
     ctx.shadowColor = "#ffffff";
@@ -13256,6 +13372,20 @@ const TOUR_STEPS = [
   },
 
   {
+    id: "haptics",
+    applies: hapticsAreAvailable,
+    title: "Feel the board?",
+    copy: "A light tap for every gem you link, a thump for a bomb and a buzz " +
+          "for a closed loop, through the phone in your hand.",
+    panels: null,
+    options: [
+      { label: "Off", choose: chooseHapticsOff, isPicked: hapticsAreOff },
+      { label: "On", choose: chooseHapticsOn, isPicked: hapticsAreOn }
+    ],
+    note: hapticsNoteForTour
+  },
+
+  {
     id: "hints",
     applies: alwaysApplies,
     title: "Should the game offer hints?",
@@ -13380,6 +13510,31 @@ function musicIsOn() {
 function musicNoteForTour() {
   if (music.enabled === true) return "Playing now. Volume lives in the settings menu.";
   return "No music. The sound effects are unaffected by this.";
+}
+
+function chooseHapticsOff() {
+  haptics.enabled = false;
+  saveSettings();
+}
+
+/* Choosing it plays one, so the answer is felt as it is given. */
+function chooseHapticsOn() {
+  haptics.enabled = true;
+  saveSettings();
+  playHaptic(HAPTIC_SAMPLE);
+}
+
+function hapticsAreOff() {
+  return haptics.enabled === false;
+}
+
+function hapticsAreOn() {
+  return haptics.enabled === true;
+}
+
+function hapticsNoteForTour() {
+  if (haptics.enabled === true) return "Every link, blast and loop will be felt as well as heard.";
+  return "Nothing will buzz. The sound effects are unaffected by this.";
 }
 
 function chooseHintsOff() {
@@ -13852,6 +14007,22 @@ function refreshSettingsPage() {
   setChannelMuted(musicGroup, music.enabled === false);
 
   refreshMusicNote();
+  refreshHapticControls();
+}
+
+/* A device with nothing to vibrate shows the switch greyed and says why,
+   so the setting never looks broken on a desktop. */
+function refreshHapticControls() {
+  hapticToggle.textContent = haptics.enabled === true ? "Haptics: On" : "Haptics: Off";
+  hapticToggle.disabled = hapticsAreAvailable() === false;
+
+  if (hapticsAreAvailable() === false) {
+    hapticNote.textContent = "This device has nothing to vibrate.";
+  } else if (haptics.enabled === true) {
+    hapticNote.textContent = "A tap for every gem you link, a thump for a bomb, a buzz for a loop.";
+  } else {
+    hapticNote.textContent = "Nothing will buzz. Sound is unaffected.";
+  }
 }
 
 function setChannelMuted(group, muted) {
@@ -14012,6 +14183,16 @@ musicToggle.addEventListener("click", function () {
   /* Turning music back on starts the track selected by the current
      screen or Settings overlay. */
   syncMusic();
+});
+
+hapticToggle.addEventListener("click", function () {
+  haptics.enabled = haptics.enabled === false;
+  refreshSettingsPage();
+  saveSettings();
+
+  /* Switching haptics back on plays one, so the player feels what they
+     are set to. */
+  if (haptics.enabled === true) playHaptic(HAPTIC_SAMPLE);
 });
 
 musicSlider.addEventListener("input", function () {
