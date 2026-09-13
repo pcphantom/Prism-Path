@@ -352,6 +352,8 @@
     display: flex;
     gap: 6px;
     align-items: stretch;
+    /* The swap tray is placed against this box. */
+    position: relative;
   }
 
   button {
@@ -471,7 +473,52 @@
     gap: 4px;
     padding: 8px 2px;
     opacity: 0.4;
+    /* Held to open the swap tray, so the browser must not answer the
+       hold with a text selection or its own menu. */
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-touch-callout: none;
   }
+
+  /* The abilities the row is not carrying, stacked over the button that
+     was held. Each is an .itemBtn sized to that button, so it reads as
+     the thing it could become. */
+  #swapTray {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    z-index: 5;
+  }
+
+  #swapTray.hidden { display: none; }
+
+  #swapTray .itemBtn {
+    flex: 0 0 auto;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+  }
+
+  /* An ability that would do nothing in this mode is still in the tray,
+     greyed: a solid dark plate at full opacity so the board never shows
+     through it, grey ink that still reads, and no fuel or colour so it
+     cannot be taken for one the player could afford. The whole button is
+     never faded, because a faded button over the board looks like a gap. */
+  #swapTray .itemBtn.unusable,
+  #swapTray .itemBtn.unusable.ready,
+  #app.hdChrome #swapTray .itemBtn.unusable,
+  #app.hdChrome #swapTray .itemBtn.unusable.ready {
+    opacity: 1;
+    filter: grayscale(1);
+    color: rgba(215, 210, 230, 0.6);
+    border-color: rgba(150, 150, 170, 0.4);
+    background: #1a1530;
+  }
+
+  #swapTray .itemBtn.unusable .fuel,
+  #app.hdChrome #swapTray .itemBtn.unusable .fuel { display: none; }
+
+  #app.hdChrome #swapTray .itemBtn.unusable .cost { color: rgba(215, 210, 230, 0.5); }
 
   .itemBtn .glyph { font-size: 22px; line-height: 1; }
 
@@ -1833,6 +1880,7 @@
       <span id="chargeValue">0/36</span>
     </div>
     <div id="itemRow"></div>
+    <div id="swapTray" class="hidden"></div>
   </div>
 
   <div id="mainMenuScreen" class="screen hidden">
@@ -2128,14 +2176,37 @@ const BLIGHT_CRAWL_SECONDS = 0.52;
    An item carries the thing it does. One that aims waits for a tap on
    the board and gets fireAt, one that does not gets fire. That is what
    lets a mode swap an item in without the code that fires them knowing
-   any of their names. */
+   any of their names.
+
+   Every ability the game has is defined here once. A mode names the four
+   its row starts with, and the player can hold any button on the row to
+   trade it for one of the abilities the row is not carrying. The cost
+   belongs to the ability and goes with it wherever it sits. */
 const CHARGE_MAX = 36;
-const CLASSIC_ITEMS = [
-  { id: "shuffle", cost: 8,  glyph: "↻", label: "Shuffle", aims: false, fire: fireShuffle },
-  { id: "bomb",    cost: 12, glyph: "✹", label: "Bomb",    aims: true,  fireAt: firePlaceBombAt },
-  { id: "moves",   cost: 20, glyph: "⇧", label: "+2 Move", aims: false, fire: fireExtraMoves },
-  { id: "purge",   cost: 36, glyph: "◈", label: "Purge",   aims: true,  fireAt: firePurgeAt }
+
+const ABILITY_SHUFFLE  = { id: "shuffle",  cost: 8,  glyph: "↻", label: "Shuffle",  aims: false, fire: fireShuffle };
+const ABILITY_BOMB     = { id: "bomb",     cost: 12, glyph: "✹", label: "Bomb",     aims: true,  fireAt: firePlaceBombAt };
+const ABILITY_MOVES    = { id: "moves",    cost: 20, glyph: "⇧", label: "+2 Move",  aims: false, fire: fireExtraMoves };
+const ABILITY_SECONDS  = { id: "seconds",  cost: 20, glyph: "⏱", label: "+Time",    aims: false, fire: fireExtraSeconds };
+const ABILITY_SNIPE    = { id: "snipe",    cost: 20, glyph: "⊕", label: "Snipe",    aims: true,  fireAt: fireSnipeAt };
+const ABILITY_DETONATE = { id: "detonate", cost: 18, glyph: "✴", label: "Detonate", aims: false, fire: fireDetonateAll };
+const ABILITY_PURGE    = { id: "purge",    cost: 36, glyph: "◈", label: "Purge",    aims: true,  fireAt: firePurgeAt };
+
+const ALL_ABILITIES = [
+  ABILITY_SHUFFLE,
+  ABILITY_BOMB,
+  ABILITY_MOVES,
+  ABILITY_SECONDS,
+  ABILITY_SNIPE,
+  ABILITY_DETONATE,
+  ABILITY_PURGE
 ];
+
+/* How many buttons the row holds. Every mode's starting row is this
+   long, and a swap keeps it so. */
+const ITEM_SLOTS = 4;
+
+const CLASSIC_ITEMS = [ABILITY_SHUFFLE, ABILITY_BOMB, ABILITY_MOVES, ABILITY_PURGE];
 
 /* How many continues a run starts with is a difficulty setting. How
    often you earn another is the same on all three. */
@@ -2148,6 +2219,12 @@ const CONTINUE_EVERY_LEVELS = 10;
 const SAVE_KEY_PREFIX = "prismPathSave:";
 const BEST_KEY_PREFIX = "prismPathBest:";
 const SETTINGS_KEY = "prismPathAudio";
+
+/* The row the player last settled on, kept per mode so a new run opens
+   with the abilities they chose last time. A Custom run keeps one per
+   base mode, because a Classic base and a clock each want a row of
+   their own. */
+const LOADOUT_KEY_PREFIX = "prismPathLoadout:";
 
 /* The keys the game used when there was one mode and one score to keep.
    Read once by migrateLegacyStorage and removed, so a run in progress
@@ -2306,6 +2383,10 @@ const game = {
   bestScore: 0,
   charge: 0,
   aiming: "none",        // "none" | an item id awaiting a tap on the board
+  /* The four ability ids on the row, in order. Starts as the mode's own
+     row and changes when the player swaps one out. Set before the row
+     is built, on a new run and on a loaded one. */
+  loadout: [],
   movesSinceBlight: 0,
   goal: null,
   burstTimer: 0,
@@ -2373,6 +2454,11 @@ const chargeFill = document.getElementById("chargeFill");
 const chargeTicks = document.getElementById("chargeTicks");
 const chargeValue = document.getElementById("chargeValue");
 const itemRow = document.getElementById("itemRow");
+const swapTray = document.getElementById("swapTray");
+
+/* Which slot of the row the swap tray is open over, -1 while it is
+   closed. Lives with the element it describes. */
+let swapTraySlot = -1;
 const menuBtn = document.getElementById("menuBtn");
 const hintBtn = document.getElementById("hintBtn");
 const hintGroup = document.getElementById("hintGroup");
@@ -3721,6 +3807,61 @@ const CLASSIC_BUDGET_RESCUE = {
   isCritical: movesAreCritical
 };
 
+/* ------------------------------------------------------------------
+   The loadout: which four abilities the row carries
+   ------------------------------------------------------------------ */
+
+/* The row a mode starts with, as ids. */
+function defaultLoadoutFor(mode) {
+  const ids = [];
+  for (let i = 0; i < mode.items.length; i++) {
+    ids.push(mode.items[i].id);
+  }
+  return ids;
+}
+
+/* A Custom run's row is remembered against the base it plays on. */
+function loadoutKeyFor(modeId) {
+  if (modeId === "custom") {
+    return LOADOUT_KEY_PREFIX + "custom:" + game.customRules.baseModeId;
+  }
+  return LOADOUT_KEY_PREFIX + modeId;
+}
+
+/* The row this mode's last run ended on, or the mode's own row when the
+   player has never swapped anything on it. Only ever written by
+   rememberLoadout, so a stored row that fails the check is a bug and
+   throws where it is found. */
+function loadoutToStartWith(modeId) {
+  const mode = modeById(modeId);
+  if (storageWorks === false) return defaultLoadoutFor(mode);
+
+  const raw = window.localStorage.getItem(loadoutKeyFor(modeId));
+  if (raw === null) return defaultLoadoutFor(mode);
+
+  const stored = JSON.parse(raw);
+  checkLoadout(stored, "the remembered " + modeId + " row");
+  return stored;
+}
+
+function rememberLoadout() {
+  if (storageWorks === false) return;
+  window.localStorage.setItem(loadoutKeyFor(game.modeId), JSON.stringify(game.loadout));
+}
+
+/* Four ids, each a real ability, none of them twice. */
+function checkLoadout(loadout, where) {
+  if (Array.isArray(loadout) === false || loadout.length !== ITEM_SLOTS) {
+    throw new Error("PRISM PURGE: " + where + " should be " + ITEM_SLOTS + " ability ids, and is " + JSON.stringify(loadout) + ".");
+  }
+  for (let i = 0; i < loadout.length; i++) {
+    abilityById(loadout[i]);
+    if (loadout.indexOf(loadout[i]) !== i) {
+      throw new Error("PRISM PURGE: " + where + " carries '" + loadout[i] + "' twice.");
+    }
+  }
+}
+
 /* Retrying the level on a fresh board, which is what a continue has
    always meant on a mode that lays out a new board every level. */
 function retryLevelOnContinue() {
@@ -3833,12 +3974,7 @@ function fireExtraSeconds() {
   saveGame();
 }
 
-const TIME_ATTACK_ITEMS = [
-  { id: "shuffle", cost: 8,  glyph: "↻", label: "Shuffle", aims: false, fire: fireShuffle },
-  { id: "bomb",    cost: 12, glyph: "✹", label: "Bomb",    aims: true,  fireAt: firePlaceBombAt },
-  { id: "seconds", cost: 20, glyph: "⏱", label: "+Time",   aims: false, fire: fireExtraSeconds },
-  { id: "purge",   cost: 36, glyph: "◈", label: "Purge",   aims: true,  fireAt: firePurgeAt }
-];
+const TIME_ATTACK_ITEMS = [ABILITY_SHUFFLE, ABILITY_BOMB, ABILITY_SECONDS, ABILITY_PURGE];
 
 /* Minutes and seconds, because a clock reading 105 asks the player to do
    arithmetic under time pressure. */
@@ -4100,12 +4236,7 @@ function fireSnipeAt(row, col) {
   refreshHud();
 }
 
-const ENDLESS_ITEMS = [
-  { id: "shuffle", cost: 8,  glyph: "↻", label: "Shuffle", aims: false, fire: fireShuffle },
-  { id: "bomb",    cost: 12, glyph: "✹", label: "Bomb",    aims: true,  fireAt: firePlaceBombAt },
-  { id: "snipe",   cost: 20, glyph: "⊕", label: "Snipe",   aims: true,  fireAt: fireSnipeAt },
-  { id: "purge",   cost: 36, glyph: "◈", label: "Purge",   aims: true,  fireAt: firePurgeAt }
-];
+const ENDLESS_ITEMS = [ABILITY_SHUFFLE, ABILITY_BOMB, ABILITY_SNIPE, ABILITY_PURGE];
 
 function endlessRulesHtml() {
   return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
@@ -4271,12 +4402,7 @@ function gemsLeftPressure() {
   return Math.max(0, Math.min(1, spent / started));
 }
 
-const ELIMINATION_ITEMS = [
-  { id: "shuffle", cost: 8,  glyph: "↻", label: "Shuffle", aims: false, fire: fireShuffle },
-  { id: "bomb",    cost: 12, glyph: "✹", label: "Bomb",    aims: true,  fireAt: firePlaceBombAt },
-  { id: "snipe",   cost: 20, glyph: "⊕", label: "Snipe",   aims: true,  fireAt: fireSnipeAt },
-  { id: "purge",   cost: 36, glyph: "◈", label: "Purge",   aims: true,  fireAt: firePurgeAt }
-];
+const ELIMINATION_ITEMS = [ABILITY_SHUFFLE, ABILITY_BOMB, ABILITY_SNIPE, ABILITY_PURGE];
 
 function eliminationRulesHtml() {
   return howToPlayHtml(STANDARD_LINK_RULES, true) +
@@ -5023,14 +5149,20 @@ function checkModeEntries() {
 
     checkDifficultyBlocks(mode, where);
 
-    for (let itemIndex = 0; itemIndex < mode.items.length; itemIndex++) {
-      const item = mode.items[itemIndex];
-      const needed = item.aims === true ? "fireAt" : "fire";
+    if (mode.items.length !== ITEM_SLOTS) {
+      throw new Error("PRISM PURGE: " + where + " starts with " + mode.items.length +
+        " items on its row, and the row holds " + ITEM_SLOTS + ".");
+    }
+  }
 
-      if (typeof item[needed] !== "function") {
-        throw new Error("PRISM PURGE: item '" + item.id + "' on " + where +
-          " aims " + item.aims + ", so it needs a '" + needed + "' function.");
-      }
+  /* Any ability can reach any row, so every one of them has to fire. */
+  for (let i = 0; i < ALL_ABILITIES.length; i++) {
+    const ability = ALL_ABILITIES[i];
+    const needed = ability.aims === true ? "fireAt" : "fire";
+
+    if (typeof ability[needed] !== "function") {
+      throw new Error("PRISM PURGE: ability '" + ability.id + "' aims " + ability.aims +
+        ", so it needs a '" + needed + "' function.");
     }
   }
 }
@@ -5333,6 +5465,7 @@ function startRun(modeId, difficulty, customRules) {
 
   /* The row belongs to the mode, so it is built once the mode is known
      and rebuilt whenever that answer changes. */
+  game.loadout = loadoutToStartWith(modeId);
   buildItemBar();
   game.score = 0;
   game.level = 1;
@@ -6242,13 +6375,21 @@ function expandBombs(set, tripleKeys) {
   return stoneDamage;
 }
 
-function everyCellOfColour(set, colour) {
+/* A colour sweep takes the plain gems of that colour and leaves the
+   specials standing, whatever colour they sit on. A prism or chromatic
+   the player forged is theirs to use, and a sweep that took it would
+   pay twenty points for a gem worth a whole colour. A special only
+   goes when it is linked, trapped inside a loop, or caught in a bomb
+   blast. Every sweep in the game reads this: a closed loop, a link
+   through a prism or a chromatic, and the Purge item. */
+function everyPlainGemOfColour(set, colour) {
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = cellAt(row, col);
-      if (cell.kind === "gem" && cell.colour === colour) {
-        set.set(keyOf(row, col), { row: row, col: col });
-      }
+      if (cell.kind !== "gem") continue;
+      if (cell.colour !== colour) continue;
+      if (cell.special !== "none") continue;
+      set.set(keyOf(row, col), { row: row, col: col });
     }
   }
 }
@@ -6418,7 +6559,7 @@ function resolvePath() {
 
   if (game.loopClosed === true && colours.all.length > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyCellOfColour(clearSet, colours.all[i]);
+      everyPlainGemOfColour(clearSet, colours.all[i]);
     }
 
     const summary = loopInteriorSummary(game.path);
@@ -6439,13 +6580,13 @@ function resolvePath() {
   }
   if (colours.hasChromatic === true && colours.all.length > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyCellOfColour(clearSet, colours.all[i]);
+      everyPlainGemOfColour(clearSet, colours.all[i]);
     }
     showBurstToast("CHROMATIC BLAST", "#ffffff");
     playTone(988, 0.5, "sine", 0.15);
     playHaptic(HAPTIC_SWEEP);
   } else if (prismInLink === true && game.pathColour !== -1) {
-    everyCellOfColour(clearSet, game.pathColour);
+    everyPlainGemOfColour(clearSet, game.pathColour);
     showBurstToast("PRISM BLAST", "#ffffff");
     playTone(880, 0.5, "sine", 0.15);
     playHaptic(HAPTIC_SWEEP);
@@ -6684,13 +6825,63 @@ function applyClear(clearSet, linkLength, bombStoneDamage, waveCentre) {
    Prism charge power
    ------------------------------------------------------------------ */
 
+/* The abilities on the row right now, as objects, in row order. The
+   mode's own list is where a run starts; the loadout is where it stands. */
+function activeItems() {
+  const items = [];
+  for (let i = 0; i < game.loadout.length; i++) {
+    items.push(abilityById(game.loadout[i]));
+  }
+  return items;
+}
+
+/* Any ability the game has, on the row or off it. */
+function abilityById(id) {
+  for (let i = 0; i < ALL_ABILITIES.length; i++) {
+    if (ALL_ABILITIES[i].id === id) return ALL_ABILITIES[i];
+  }
+  throw new Error("PRISM PURGE: there is no ability called '" + id + "'.");
+}
+
+/* The abilities the row is not carrying, in the order of the table, so
+   the swap tray lists them the same way every time. One that would do
+   nothing in this mode is still listed, greyed, so the player sees the
+   whole set. */
+function abilitiesOffTheRow() {
+  const off = [];
+  for (let i = 0; i < ALL_ABILITIES.length; i++) {
+    if (game.loadout.indexOf(ALL_ABILITIES[i].id) === -1) off.push(ALL_ABILITIES[i]);
+  }
+  return off;
+}
+
+/* Said when the player taps a greyed ability in the tray. */
+function abilityBlockedReason(id) {
+  if (id === "moves") return "NO MOVES TO BUY HERE";
+  if (id === "seconds") return "NO CLOCK TO BUY HERE";
+  throw new Error("PRISM PURGE: ability '" + id + "' is never blocked, so it has no reason.");
+}
+
+/* Whether an ability would do anything in the mode being played. The
+   two that buy budget only mean something where that budget is the
+   thing running out, which the mode's rescue names: +2 Moves where the
+   rescue is moves, +Time where it is seconds. A mode where nothing runs
+   out has no rescue and neither one does anything there. */
+function abilityWorksInMode(id) {
+  const rescue = activeMode().budgetRescue;
+
+  if (id === "moves") return rescue !== null && rescue.itemId === "moves";
+  if (id === "seconds") return rescue !== null && rescue.itemId === "seconds";
+  return true;
+}
+
 function itemById(id) {
-  const items = activeMode().items;
+  const items = activeItems();
 
   for (let i = 0; i < items.length; i++) {
     if (items[i].id === id) return items[i];
   }
-  throw new Error("PRISM PURGE: mode '" + game.modeId + "' has no item called '" + id + "'.");
+  throw new Error("PRISM PURGE: the row has no item called '" + id + "'.");
 }
 
 function canAfford(id) {
@@ -6702,7 +6893,7 @@ function canAfford(id) {
    dropped one would otherwise send itemById looking for something that
    is not there. */
 function modeHasItem(id) {
-  const items = activeMode().items;
+  const items = activeItems();
 
   for (let i = 0; i < items.length; i++) {
     if (items[i].id === id) return true;
@@ -6970,7 +7161,7 @@ function firePurgeAt(row, col) {
   }
 
   const clearSet = new Map();
-  everyCellOfColour(clearSet, cell.colour);
+  everyPlainGemOfColour(clearSet, cell.colour);
   const bombStoneDamage = expandBombs(clearSet, new Set());
 
   game.pathColour = cell.colour;
@@ -6984,6 +7175,42 @@ function firePurgeAt(row, col) {
 
   spendCharge("purge");
   game.pathColour = -1;
+  refreshHud();
+}
+
+/* Sets off every bomb on the board at once, each at its ordinary reach.
+   A board with no bombs on it has nothing to sell, so the charge is
+   kept and the button says why. */
+function fireDetonateAll() {
+  const clearSet = new Map();
+
+  for (let row = 0; row < ROWS; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = cellAt(row, col);
+      if (cell.kind !== "gem") continue;
+      if (cell.special !== "bomb") continue;
+      addToClearSet(clearSet, row, col);
+    }
+  }
+
+  if (clearSet.size === 0) {
+    showToast("NO BOMBS", "#ff5470");
+    playTone(160, 0.16, "square", 0.1);
+    return;
+  }
+
+  /* Every bomb on the board is in the set before it grows to take in
+     what the blasts reach, so its size now is the count that went off. */
+  const bombCount = clearSet.size;
+  const bombStoneDamage = expandBombs(clearSet, new Set());
+
+  showToast("DETONATED x" + bombCount, "#ffab35");
+  playTone(160, 0.35, "square", 0.13);
+  playNoiseHit(0.22);
+
+  applyClear(clearSet, clearSet.size, bombStoneDamage, null);
+
+  spendCharge("detonate");
   refreshHud();
 }
 
@@ -7534,7 +7761,7 @@ function describeLinkMove(path, closesLoop) {
 
   if (closesLoop === true && colours.all.length > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyCellOfColour(cleared, colours.all[i]);
+      everyPlainGemOfColour(cleared, colours.all[i]);
     }
 
     const summary = loopInteriorSummary(path);
@@ -7564,10 +7791,10 @@ function describeLinkMove(path, closesLoop) {
      has only the one. */
   if (chromaticsInPath > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyCellOfColour(cleared, colours.all[i]);
+      everyPlainGemOfColour(cleared, colours.all[i]);
     }
   } else if (prismsInPath > 0 && colours.current !== -1) {
-    everyCellOfColour(cleared, colours.current);
+    everyPlainGemOfColour(cleared, colours.current);
   }
 
   const blast = hintBlastExpansion(cleared, tripleKeys);
@@ -7950,7 +8177,7 @@ function lastChanceBudgetHint() {
   if (rescue === null) return null;
 
   if (rescue.isCritical() === false) return null;
-  if (canAfford(rescue.itemId) === false) return null;
+  if (couldSuggest(rescue.itemId) === false) return null;
   if (findLinkMove().bestGoalProgress >= goalRemaining()) return null;
 
   return buyBudgetHint(rescue);
@@ -7962,7 +8189,7 @@ function findItemMove(linkResult) {
   /* Running out ends the level whatever else is on the board, so when
      the budget is critical that comes before anything else. A mode where
      nothing runs out has no such moment. */
-  if (rescue !== null && rescue.isCritical() === true && canAfford(rescue.itemId) === true) {
+  if (rescue !== null && rescue.isCritical() === true && couldSuggest(rescue.itemId) === true) {
     if (linkResult.bestGoalProgress < goalRemaining()) {
       return buyBudgetHint(rescue);
     }
@@ -8522,7 +8749,7 @@ function saveGame() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 6,
+    version: 7,
     randomBackgroundId: BackgroundHandler.randomId(),
     rows: ROWS,
     cols: COLS,
@@ -8534,6 +8761,7 @@ function saveGame() {
     scoreAtLevelStart: game.scoreAtLevelStart,
     budget: game.budget,
     charge: game.charge,
+    loadout: game.loadout,
     continues: game.continues,
     blightCarry: game.blightCarry,
     movesSinceBlight: game.movesSinceBlight,
@@ -8556,7 +8784,7 @@ function readSaveFor(modeId, difficulty) {
      the same way a save from a differently shaped board is. Said out
      loud, because a run vanishing off the mode select screen with no
      explanation is the worst way to meet it. */
-  if (payload.version !== 4 && payload.version !== 5 && payload.version !== 6) {
+  if (payload.version !== 4 && payload.version !== 5 && payload.version !== 6 && payload.version !== 7) {
     console.error("PRISM PURGE found a saved " + modeId + " game on " + difficulty +
       " at version " + payload.version + ", which this build cannot read. It has been " +
       "left alone and the mode will offer a new game.");
@@ -8580,6 +8808,14 @@ function readSaveFor(modeId, difficulty) {
     payload.customRules = null;
   }
 
+  /* Version 6 predates swapping abilities, so its row is the one its
+     mode starts with. That is worked out at load, once the mode is
+     known, and null here is what asks for it. */
+  if (payload.version === 6) {
+    payload.version = 7;
+    payload.loadout = null;
+  }
+
   /* A Custom run is nothing without the rules it was begun on. */
   if (payload.mode === "custom" && (payload.customRules === null || typeof payload.customRules !== "object")) {
     console.error("PRISM PURGE found a saved Custom game on " + difficulty +
@@ -8599,6 +8835,15 @@ function loadGame(payload) {
   }
   game.specialCarry = { bomb: 0, prism: 0, chromatic: 0 };
   game.bestScore = loadBest(payload.mode, payload.difficulty);
+
+  /* A run saved before abilities could be swapped is on its mode's own
+     row; every later save says which row it was on. */
+  if (payload.loadout === null) {
+    game.loadout = defaultLoadoutFor(activeMode());
+  } else {
+    checkLoadout(payload.loadout, "the saved " + payload.mode + " row");
+    game.loadout = payload.loadout;
+  }
   buildItemBar();
   game.level = payload.level;
   game.score = payload.score;
@@ -12354,9 +12599,60 @@ function hintPointsAtItem(id) {
    the buttons keep their identity across redraws. Two modes with
    different items means the row is rebuilt on the way into a run rather
    than once at boot. */
-function buildItemBar() {
-  const items = activeMode().items;
+/* How long a button is held before the swap tray opens. Long enough
+   that a firm tap never opens it, short enough that holding does not
+   feel like waiting. */
+const SWAP_HOLD_SECONDS = 0.45;
 
+/* One .itemBtn for an ability, the same markup wherever it sits. Both
+   readings of the cost are in the markup and the appearance picks one.
+   Standard reads it inside the name, "SHUFFLE 8", the way it always
+   has. HD hides that copy, puts the number in the corner and fills the
+   button up to it. */
+function makeItemButton(item) {
+  const button = document.createElement("button");
+  button.className = "itemBtn";
+  button.dataset.item = item.id;
+  button.dataset.cost = String(item.cost);
+
+  button.innerHTML =
+    "<span class='fuel'></span>" +
+    "<span class='cost'>" + item.cost + "</span>" +
+    "<span class='glyph'>" + item.glyph + "</span>" +
+    "<span class='name'>" + item.label +
+      "<span class='inlineCost'> " + item.cost + "</span></span>";
+
+  return button;
+}
+
+/* Ready, armed, hinted and how full: the same reading for a button on
+   the row and one in the tray. */
+function paintItemButton(button) {
+  const id = button.dataset.item;
+
+  button.classList.remove("ready");
+  button.classList.remove("armed");
+  button.classList.remove("hinted");
+
+  if (game.aiming === id) {
+    button.classList.add("armed");
+  } else if (game.charge >= abilityById(id).cost) {
+    button.classList.add("ready");
+  }
+
+  if (hintPointsAtItem(id) === true) button.classList.add("hinted");
+
+  /* How close the meter is to paying for this one, which is what HD
+     fills the button with. Standard never shows it. */
+  const cost = parseInt(button.dataset.cost, 10);
+  const towards = Math.min(1, game.charge / cost);
+  button.style.setProperty("--fuel", Math.round(towards * 100) + "%");
+}
+
+function buildItemBar() {
+  const items = activeItems();
+
+  closeSwapTray();
   chargeTicks.innerHTML = "";
   itemRow.innerHTML = "";
 
@@ -12373,32 +12669,157 @@ function buildItemBar() {
     chargeTicks.appendChild(tick);
   }
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    const button = document.createElement("button");
-    button.className = "itemBtn";
-    button.dataset.item = item.id;
-    button.dataset.cost = String(item.cost);
-
-    /* Both readings of the cost are in the markup and the appearance
-       picks one. Standard reads it inside the name, "SHUFFLE 8", the way
-       it always has. HD hides that copy, puts the number in the corner
-       and fills the button up to it. */
-    button.innerHTML =
-      "<span class='fuel'></span>" +
-      "<span class='cost'>" + item.cost + "</span>" +
-      "<span class='glyph'>" + item.glyph + "</span>" +
-      "<span class='name'>" + item.label +
-        "<span class='inlineCost'> " + item.cost + "</span></span>";
-
-    button.addEventListener("click", function () {
-      ensureAudio();
-      selectItem(item.id);
-    });
-
+  for (let slot = 0; slot < items.length; slot++) {
+    const item = items[slot];
+    const button = makeItemButton(item);
+    wireHoldToSwap(button, slot);
     itemRow.appendChild(button);
   }
 }
+
+/* A tap fires the ability, a hold opens the tray over the button. The
+   hold is a timer started on the way down and stopped on the way up,
+   and when it goes off the click that follows the release is not a
+   tap, so it is swallowed. */
+function wireHoldToSwap(button, slot) {
+  let holdTimer = null;
+  let holdOpened = false;
+
+  function cancelHold() {
+    if (holdTimer === null) return;
+    clearTimeout(holdTimer);
+    holdTimer = null;
+  }
+
+  button.addEventListener("pointerdown", function () {
+    holdOpened = false;
+    cancelHold();
+    holdTimer = setTimeout(function () {
+      holdTimer = null;
+      holdOpened = true;
+      ensureAudio();
+      openSwapTray(slot);
+    }, SWAP_HOLD_SECONDS * 1000);
+  });
+
+  button.addEventListener("pointerup", cancelHold);
+  button.addEventListener("pointercancel", cancelHold);
+  button.addEventListener("pointerleave", cancelHold);
+
+  /* The hold is the game's, so the browser's own long press menu is
+     declined. */
+  button.addEventListener("contextmenu", function (event) {
+    event.preventDefault();
+  });
+
+  button.addEventListener("click", function () {
+    if (holdOpened === true) {
+      holdOpened = false;
+      return;
+    }
+    closeSwapTray();
+    ensureAudio();
+    selectItem(button.dataset.item);
+  });
+}
+
+/* ---- the swap tray ---- */
+
+/* Opens the tray over the held button: every ability the row is not
+   carrying, one button each, sized to the button that was held and
+   stacked upward from just above it. */
+function openSwapTray(slot) {
+  const held = itemRow.children[slot];
+  const offRow = abilitiesOffTheRow();
+
+  swapTray.innerHTML = "";
+  swapTraySlot = slot;
+
+  for (let i = 0; i < offRow.length; i++) {
+    const ability = offRow[i];
+    const button = makeItemButton(ability);
+    button.style.width = held.offsetWidth + "px";
+    button.style.height = held.offsetHeight + "px";
+
+    if (abilityWorksInMode(ability.id) === false) {
+      button.classList.add("unusable");
+    }
+
+    button.addEventListener("click", function () {
+      ensureAudio();
+      chooseSwap(slot, ability.id);
+    });
+
+    swapTray.appendChild(button);
+  }
+
+  /* The tray's bottom edge sits one gap above the held button's top,
+     and its left edge lines up with it. The button's offsets are
+     already against #controls, the nearest positioned box, which is
+     the one the tray is positioned in too. */
+  const gap = 5;
+  const trayHeight = offRow.length * held.offsetHeight + (offRow.length - 1) * gap;
+  swapTray.style.left = held.offsetLeft + "px";
+  swapTray.style.top = (held.offsetTop - gap - trayHeight) + "px";
+  swapTray.classList.remove("hidden");
+
+  playTone(440, 0.1, "sine", 0.08);
+  playHaptic(HAPTIC_TICK);
+  updateSwapTray();
+}
+
+function closeSwapTray() {
+  if (swapTraySlot === -1) return;
+  swapTraySlot = -1;
+  swapTray.innerHTML = "";
+  swapTray.classList.add("hidden");
+}
+
+/* Puts the chosen ability into the held slot. The one it replaces goes
+   back into the pool, so holding again offers it. A greyed ability
+   stays in the tray and says why it cannot come across. */
+function chooseSwap(slot, abilityId) {
+  if (abilityWorksInMode(abilityId) === false) {
+    showToast(abilityBlockedReason(abilityId), "#ff5470");
+    playTone(160, 0.16, "square", 0.1);
+    return;
+  }
+
+  const leaving = game.loadout[slot];
+  game.loadout[slot] = abilityId;
+
+  /* An item armed and waiting for a tap on the board is nothing once it
+     has left the row, and a hint that named it is stale. */
+  if (game.aiming === leaving) game.aiming = "none";
+  clearHint();
+  resetHintTimer();
+
+  rememberLoadout();
+  buildItemBar();
+  showToast(abilityById(abilityId).label.toUpperCase() + " IN", "#4fd6ff");
+  playTone(660, 0.14, "triangle", 0.12);
+  playHaptic(HAPTIC_ITEM);
+  refreshHud();
+  saveGame();
+}
+
+/* The tray's buttons read charge the way the row's do. */
+function updateSwapTray() {
+  if (swapTraySlot === -1) return;
+
+  const buttons = swapTray.querySelectorAll(".itemBtn");
+  for (let i = 0; i < buttons.length; i++) {
+    paintItemButton(buttons[i]);
+  }
+}
+
+/* A press anywhere but inside the tray closes it. Listened for at the
+   capture stage so it runs before whatever was pressed acts. */
+document.addEventListener("pointerdown", function (event) {
+  if (swapTraySlot === -1) return;
+  if (swapTray.contains(event.target) === true) return;
+  closeSwapTray();
+}, true);
 
 function updateItemBar() {
   chargeFill.style.width = (game.charge / CHARGE_MAX) * 100 + "%";
@@ -12416,27 +12837,10 @@ function updateItemBar() {
 
   const buttons = itemRow.querySelectorAll(".itemBtn");
   for (let i = 0; i < buttons.length; i++) {
-    const button = buttons[i];
-    const id = button.dataset.item;
-
-    button.classList.remove("ready");
-    button.classList.remove("armed");
-    button.classList.remove("hinted");
-
-    if (game.aiming === id) {
-      button.classList.add("armed");
-    } else if (canAfford(id) === true) {
-      button.classList.add("ready");
-    }
-
-    if (hintPointsAtItem(id) === true) button.classList.add("hinted");
-
-    /* How close the meter is to paying for this one, which is what HD
-       fills the button with. Standard never shows it. */
-    const cost = parseInt(button.dataset.cost, 10);
-    const towards = Math.min(1, game.charge / cost);
-    button.style.setProperty("--fuel", Math.round(towards * 100) + "%");
+    paintItemButton(buttons[i]);
   }
+
+  updateSwapTray();
 }
 
 /* ------------------------------------------------------------------
@@ -12512,14 +12916,15 @@ function howToPlayHtml(linkRules, loopsEnabled) {
   let text = "";
   text += "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>" + linkRules.minLink + " or more</b> to burst them.</span></div>";
   if (loopsEnabled === true) {
-    text += "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>";
+    text += "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every plain gem of that colour off the board. Specials you did not link or trap stay where they are.</span></div>";
   }
   text += forgeRulesHtml(linkRules, loopsEnabled);
   if (loopsEnabled === true) {
     text += loopAroundRuleHtml(linkRules);
   }
   return text +
-  "<div class='rule'><span class='pip'>&#9878;</span><span>Bursting fills your <b>charge</b>. The row along the bottom of the screen is what it buys.</span></div>";
+  "<div class='rule'><span class='pip'>&#9878;</span><span>Bursting fills your <b>charge</b>. The row along the bottom of the screen is what it buys.</span></div>" +
+  "<div class='rule'><span class='pip'>&#8645;</span><span><b>Hold</b> any button on the row to see the abilities it is not carrying, and tap one to swap it in. <b>Detonate</b> sets off every bomb on the board at once.</span></div>";
 }
 
 /* What a link forges, naming only the specials the rules have on, and
@@ -12596,7 +13001,7 @@ function classicRulesHtml() {
    hazard or a link length has to be true under Custom too. */
 function classicOwnRulesHtml(hazards, linkRules) {
   return "" +
-    "<div class='rule'><span class='pip'>&#8679;</span><span><b>+2 Moves</b> is the third thing charge buys, and the one the other modes swap out.</span></div>" +
+    "<div class='rule'><span class='pip'>&#8679;</span><span><b>+2 Moves</b> is the third thing charge buys, and the one the other modes start without.</span></div>" +
     retryContinueRuleHtml();
 }
 
