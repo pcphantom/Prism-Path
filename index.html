@@ -1839,6 +1839,11 @@
             <p class="settingNote" id="hapticNote"></p>
           </div>
 
+          <div class="settingGroup" id="sweepGroup">
+            <button class="menuItem" id="sweepToggle">Sweeps spare specials: Off</button>
+            <p class="settingNote" id="sweepNote"></p>
+          </div>
+
           <button class="menuItem" id="settingsBack">Back</button>
         </div>
 
@@ -2060,6 +2065,16 @@ const graphics = {
    worth holding, so it is simply not drawn. */
 const shimmer = {
   enabled: true
+};
+
+/* Whether a colour sweep leaves the specials of that colour standing.
+   Off is the game as it has always played: a loop, a prism, a chromatic
+   or Purge takes every gem of the colour. On, they take the plain gems
+   and a special goes only when it is linked, trapped in a loop or
+   caught in a blast. A Custom run carries its own answer in its rules;
+   this one is for every other mode. */
+const sweeps = {
+  spareSpecials: false
 };
 
 /* Where the highlight star is held while the shimmer is off. Full size,
@@ -2485,6 +2500,8 @@ const musicGroup = document.getElementById("musicGroup");
 const musicToggle = document.getElementById("musicToggle");
 const hapticToggle = document.getElementById("hapticToggle");
 const hapticNote = document.getElementById("hapticNote");
+const sweepToggle = document.getElementById("sweepToggle");
+const sweepNote = document.getElementById("sweepNote");
 const musicSlider = document.getElementById("musicSlider");
 const musicReadout = document.getElementById("musicReadout");
 const menuFull = document.getElementById("menuFull");
@@ -4027,7 +4044,7 @@ const TIME_ATTACK_BUDGET_RESCUE = {
 };
 
 function timeAttackRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true, sweeps.spareSpecials) + hazardRulesHtml() +
     timeAttackOwnRulesHtml(CLASSIC_HAZARDS.normal, STANDARD_LINK_RULES);
 }
 
@@ -4239,7 +4256,7 @@ function fireSnipeAt(row, col) {
 const ENDLESS_ITEMS = [ABILITY_SHUFFLE, ABILITY_BOMB, ABILITY_SNIPE, ABILITY_PURGE];
 
 function endlessRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true, sweeps.spareSpecials) + hazardRulesHtml() +
     endlessOwnRulesHtml(ENDLESS_HAZARDS.normal, STANDARD_LINK_RULES);
 }
 
@@ -4405,7 +4422,7 @@ function gemsLeftPressure() {
 const ELIMINATION_ITEMS = [ABILITY_SHUFFLE, ABILITY_BOMB, ABILITY_SNIPE, ABILITY_PURGE];
 
 function eliminationRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES, true) +
+  return howToPlayHtml(STANDARD_LINK_RULES, true, sweeps.spareSpecials) +
     eliminationOwnRulesHtml(ELIMINATION_HAZARDS.normal, STANDARD_LINK_RULES);
 }
 
@@ -4478,6 +4495,7 @@ function defaultCustomRules() {
     stonesEnabled: true,
     loopsEnabled: true,
     specialsCarryOver: false,
+    sweepsSpareSpecials: false,
     links: {
       minLink: MIN_LINK,
       bombEnabled: true,
@@ -4499,6 +4517,7 @@ function cloneCustomRules(rules) {
     stonesEnabled: rules.stonesEnabled,
     loopsEnabled: rules.loopsEnabled,
     specialsCarryOver: rules.specialsCarryOver,
+    sweepsSpareSpecials: rules.sweepsSpareSpecials,
     links: {
       minLink: rules.links.minLink,
       bombEnabled: rules.links.bombEnabled,
@@ -4528,6 +4547,7 @@ function checkCustomRules(rules, where) {
   checkRuleSwitch(rules.stonesEnabled, where, "stonesEnabled");
   checkRuleSwitch(rules.loopsEnabled, where, "loopsEnabled");
   checkRuleSwitch(rules.specialsCarryOver, where, "specialsCarryOver");
+  checkRuleSwitch(rules.sweepsSpareSpecials, where, "sweepsSpareSpecials");
 
   if (rules.baseModeId === "elimination") {
     if (rules.blightEnabled === true || rules.stonesEnabled === true) {
@@ -4724,7 +4744,7 @@ function customRulesHtml() {
   const base = modeById(customRulesApplied.baseModeId);
   const hazards = custom.hazards.normal;
 
-  let text = howToPlayHtml(custom.linkRules, custom.loopsEnabled);
+  let text = howToPlayHtml(custom.linkRules, custom.loopsEnabled, customRulesApplied.sweepsSpareSpecials);
   if (hazards.maxStones > 0) text += stoneRuleHtml(custom.loopsEnabled);
   if (hazards.maxBlightOnBoard > 0) text += blightRuleHtml(custom.loopsEnabled);
   text += base.ownRulesHtml(hazards, custom.linkRules);
@@ -4761,6 +4781,7 @@ function customDifficultySummary(difficultyId) {
   text += ", chromatic " + (links.chromaticEnabled === true ? "at " + links.chromaticLink : "off") + ".";
 
   if (rules.specialsCarryOver === true) text += " Specials carry over.";
+  if (rules.sweepsSpareSpecials === true) text += " Sweeps spare specials.";
   return text;
 }
 
@@ -6375,20 +6396,25 @@ function expandBombs(set, tripleKeys) {
   return stoneDamage;
 }
 
-/* A colour sweep takes the plain gems of that colour and leaves the
-   specials standing, whatever colour they sit on. A prism or chromatic
-   the player forged is theirs to use, and a sweep that took it would
-   pay twenty points for a gem worth a whole colour. A special only
-   goes when it is linked, trapped inside a loop, or caught in a bomb
-   blast. Every sweep in the game reads this: a closed loop, a link
-   through a prism or a chromatic, and the Purge item. */
-function everyPlainGemOfColour(set, colour) {
+/* The rule in play: a Custom run's own, every other mode the setting. */
+function sweepsSpareSpecials() {
+  if (game.modeId === "custom") return game.customRules.sweepsSpareSpecials;
+  return sweeps.spareSpecials;
+}
+
+/* Every gem a colour sweep takes. With the rule off that is every gem
+   of the colour. With it on the specials stand, whatever colour they
+   sit on, and go only when linked, trapped inside a loop, or caught in
+   a bomb blast. Every sweep in the game reads this: a closed loop, a
+   link through a prism or a chromatic, and the Purge item. */
+function everyGemOfColourForSweep(set, colour) {
+  const spareSpecials = sweepsSpareSpecials();
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = cellAt(row, col);
       if (cell.kind !== "gem") continue;
       if (cell.colour !== colour) continue;
-      if (cell.special !== "none") continue;
+      if (spareSpecials === true && cell.special !== "none") continue;
       set.set(keyOf(row, col), { row: row, col: col });
     }
   }
@@ -6559,7 +6585,7 @@ function resolvePath() {
 
   if (game.loopClosed === true && colours.all.length > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyPlainGemOfColour(clearSet, colours.all[i]);
+      everyGemOfColourForSweep(clearSet, colours.all[i]);
     }
 
     const summary = loopInteriorSummary(game.path);
@@ -6580,13 +6606,13 @@ function resolvePath() {
   }
   if (colours.hasChromatic === true && colours.all.length > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyPlainGemOfColour(clearSet, colours.all[i]);
+      everyGemOfColourForSweep(clearSet, colours.all[i]);
     }
     showBurstToast("CHROMATIC BLAST", "#ffffff");
     playTone(988, 0.5, "sine", 0.15);
     playHaptic(HAPTIC_SWEEP);
   } else if (prismInLink === true && game.pathColour !== -1) {
-    everyPlainGemOfColour(clearSet, game.pathColour);
+    everyGemOfColourForSweep(clearSet, game.pathColour);
     showBurstToast("PRISM BLAST", "#ffffff");
     playTone(880, 0.5, "sine", 0.15);
     playHaptic(HAPTIC_SWEEP);
@@ -7161,7 +7187,7 @@ function firePurgeAt(row, col) {
   }
 
   const clearSet = new Map();
-  everyPlainGemOfColour(clearSet, cell.colour);
+  everyGemOfColourForSweep(clearSet, cell.colour);
   const bombStoneDamage = expandBombs(clearSet, new Set());
 
   game.pathColour = cell.colour;
@@ -7761,7 +7787,7 @@ function describeLinkMove(path, closesLoop) {
 
   if (closesLoop === true && colours.all.length > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyPlainGemOfColour(cleared, colours.all[i]);
+      everyGemOfColourForSweep(cleared, colours.all[i]);
     }
 
     const summary = loopInteriorSummary(path);
@@ -7791,10 +7817,10 @@ function describeLinkMove(path, closesLoop) {
      has only the one. */
   if (chromaticsInPath > 0) {
     for (let i = 0; i < colours.all.length; i++) {
-      everyPlainGemOfColour(cleared, colours.all[i]);
+      everyGemOfColourForSweep(cleared, colours.all[i]);
     }
   } else if (prismsInPath > 0 && colours.current !== -1) {
-    everyPlainGemOfColour(cleared, colours.current);
+    everyGemOfColourForSweep(cleared, colours.current);
   }
 
   const blast = hintBlastExpansion(cleared, tripleKeys);
@@ -8814,6 +8840,9 @@ function readSaveFor(modeId, difficulty) {
   if (payload.version === 6) {
     payload.version = 7;
     payload.loadout = null;
+    if (payload.customRules !== null && typeof payload.customRules === "object") {
+      payload.customRules.sweepsSpareSpecials = false;
+    }
   }
 
   /* A Custom run is nothing without the rules it was begun on. */
@@ -8924,10 +8953,11 @@ function saveSettings() {
   if (storageWorks === false) return;
 
   const payload = {
-    version: 8,
+    version: 9,
     backgrounds: BackgroundHandler.preferences(),
     customPicks: customPicks,
     hapticsEnabled: haptics.enabled,
+    sweepsSpareSpecials: sweeps.spareSpecials,
     sfxEnabled: sound.enabled,
     sfxVolume: sound.volume,
     musicEnabled: music.enabled,
@@ -8976,6 +9006,10 @@ function saveSettings() {
    Version 7 predates haptics, so haptics keep their own default, which
    is on.
 
+   Version 8 predates the sweep switch, so it keeps its own default,
+   which is off, and the stored Custom picks from version 7 or 8 have
+   it off as well.
+
    A payload under a version this build does not know is treated as
    absent, the same way an old save is. A payload under a version it
    does know is expected to hold the right shape, and is not quietly
@@ -8989,7 +9023,7 @@ function loadSettings() {
   const payload = JSON.parse(raw);
   if (payload.version !== 1 && payload.version !== 2 && payload.version !== 3 &&
       payload.version !== 4 && payload.version !== 5 && payload.version !== 6 &&
-      payload.version !== 7 && payload.version !== 8) return;
+      payload.version !== 7 && payload.version !== 8 && payload.version !== 9) return;
 
   settingsWereStored = true;
 
@@ -9023,10 +9057,16 @@ function loadSettings() {
   BackgroundHandler.restorePreferences(payload.backgrounds);
   if (payload.version === 6) return;
 
+  if (payload.version === 7 || payload.version === 8) {
+    payload.customPicks.sweepsSpareSpecials = false;
+  }
   customPicks = storedCustomPicks(payload.customPicks, "customPicks");
   if (payload.version === 7) return;
 
   haptics.enabled = storedSwitch(payload.hapticsEnabled, "hapticsEnabled");
+  if (payload.version === 8) return;
+
+  sweeps.spareSpecials = storedSwitch(payload.sweepsSpareSpecials, "sweepsSpareSpecials");
 }
 
 /* A stored rules object is checked the way a run's is, field by field,
@@ -12909,14 +12949,26 @@ cardBtnAlt.addEventListener("click", function () {
    top of this, and nothing here may describe a piece that some mode does
    not have. Stones, blight and the third charge item all failed that
    test and moved out. */
+/* One line for the sweep rule, in the settings page and the Custom
+   setup, so the two never drift. */
+function sweepRuleNote(spareSpecials) {
+  if (spareSpecials === true) {
+    return "Loops, prisms, chromatics and Purge take plain gems only. Specials stay unless linked, trapped or blasted.";
+  }
+  return "Loops, prisms, chromatics and Purge take every gem of the colour, specials included.";
+}
+
 /* The rules every mode shares, printed from the link rules handed in so
    the numbers are the ones in play. The two loop lines are printed only
    where loops are on, which for every fixed mode is always. */
-function howToPlayHtml(linkRules, loopsEnabled) {
+function howToPlayHtml(linkRules, loopsEnabled, spareSpecials) {
   let text = "";
   text += "<div class='rule'><span class='pip'>&#9679;</span><span><b>Drag</b> across touching gems of the same colour. Release with <b>" + linkRules.minLink + " or more</b> to burst them.</span></div>";
-  if (loopsEnabled === true) {
+  if (loopsEnabled === true && spareSpecials === true) {
     text += "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every plain gem of that colour off the board. Specials you did not link or trap stay where they are.</span></div>";
+  }
+  if (loopsEnabled === true && spareSpecials === false) {
+    text += "<div class='rule'><span class='pip'>&#8634;</span><span>Cross your own trail to <b>close a loop</b> and wipe every gem of that colour off the board.</span></div>";
   }
   text += forgeRulesHtml(linkRules, loopsEnabled);
   if (loopsEnabled === true) {
@@ -12991,7 +13043,7 @@ function retryContinueRuleHtml() {
 }
 
 function classicRulesHtml() {
-  return howToPlayHtml(STANDARD_LINK_RULES, true) + hazardRulesHtml() +
+  return howToPlayHtml(STANDARD_LINK_RULES, true, sweeps.spareSpecials) + hazardRulesHtml() +
     classicOwnRulesHtml(CLASSIC_HAZARDS.normal, STANDARD_LINK_RULES);
 }
 
@@ -13321,6 +13373,8 @@ const customControls = {
   loopsNote: null,
   carryToggle: null,
   carryNote: null,
+  sweepToggle: null,
+  sweepNote: null,
   minLinkStepper: null,
   bombToggle: null,
   bombStepper: null,
@@ -13557,6 +13611,12 @@ function buildCustomEditor() {
   });
   customControls.carryNote = makeRuleNote();
 
+  customControls.sweepToggle = makeToggle(makeRuleRow("Sweeps spare specials", false), function () {
+    customPicks.sweepsSpareSpecials = customPicks.sweepsSpareSpecials === false;
+    customPickChanged();
+  });
+  customControls.sweepNote = makeRuleNote();
+
   customControls.minLinkStepper = makeStepper(makeRuleRow("Minimum link", false), stepMinLink);
 
   const bombRow = makeRuleRow("Bomb", false);
@@ -13620,6 +13680,9 @@ function refreshCustomEditor() {
   } else {
     customControls.carryNote.textContent = "Bombs, prisms and chromatics on the board follow you onto the next one.";
   }
+
+  refreshToggle(customControls.sweepToggle, picks.sweepsSpareSpecials, false);
+  customControls.sweepNote.textContent = sweepRuleNote(picks.sweepsSpareSpecials);
 
   const minWindow = minLinkWindow();
   refreshStepper(customControls.minLinkStepper, links.minLink, minWindow.lowest, minWindow.highest, false);
@@ -14203,7 +14266,7 @@ function showHelpScreen(returnTo) {
     helpRules.innerHTML = mode.rulesHtml();
   } else {
     helpSubtitle.textContent = "PRISM PURGE";
-    helpRules.innerHTML = howToPlayHtml(STANDARD_LINK_RULES, true);
+    helpRules.innerHTML = howToPlayHtml(STANDARD_LINK_RULES, true, sweeps.spareSpecials);
   }
 
   helpRules.scrollTop = 0;
@@ -14413,6 +14476,12 @@ function refreshSettingsPage() {
 
   refreshMusicNote();
   refreshHapticControls();
+  refreshSweepControls();
+}
+
+function refreshSweepControls() {
+  sweepToggle.textContent = sweeps.spareSpecials === true ? "Sweeps spare specials: On" : "Sweeps spare specials: Off";
+  sweepNote.textContent = sweepRuleNote(sweeps.spareSpecials) + " Custom games have their own switch.";
 }
 
 /* A device with nothing to vibrate shows the switch greyed and says why,
@@ -14598,6 +14667,12 @@ hapticToggle.addEventListener("click", function () {
   /* Switching haptics back on plays one, so the player feels what they
      are set to. */
   if (haptics.enabled === true) playHaptic(HAPTIC_SAMPLE);
+});
+
+sweepToggle.addEventListener("click", function () {
+  sweeps.spareSpecials = sweeps.spareSpecials === false;
+  refreshSettingsPage();
+  saveSettings();
 });
 
 musicSlider.addEventListener("input", function () {
